@@ -52,6 +52,7 @@ func (svr *Service) registerRouteHandlers(helper *httppkg.RouterRegisterHelper) 
 	subRouter.HandleFunc("/api/serverinfo", svr.apiServerInfo).Methods("GET")
 	subRouter.HandleFunc("/api/proxy/{type}", svr.apiProxyByType).Methods("GET")
 	subRouter.HandleFunc("/api/proxy/{type}/{name}", svr.apiProxyByTypeAndName).Methods("GET")
+	subRouter.HandleFunc("/api/proxy/{type}/{name}/kick", svr.apiKickProxyByTypeAndName).Methods("POST")
 	subRouter.HandleFunc("/api/traffic/{name}", svr.apiProxyTraffic).Methods("GET")
 	subRouter.HandleFunc("/api/proxies", svr.deleteProxies).Methods("DELETE")
 
@@ -306,6 +307,37 @@ func (svr *Service) apiProxyByTypeAndName(w http.ResponseWriter, r *http.Request
 
 	buf, _ := json.Marshal(&proxyStatsResp)
 	res.Msg = string(buf)
+}
+
+// POST /api/proxy/:type/:name/kick
+// Kick the client (frpc) that owns the proxy with given name.
+func (svr *Service) apiKickProxyByTypeAndName(w http.ResponseWriter, r *http.Request) {
+	res := GeneralResponse{Code: 200}
+	params := mux.Vars(r)
+	name := params["name"]
+
+	defer func() {
+		log.Infof("http response [%s]: code [%d]", r.URL.Path, res.Code)
+		w.WriteHeader(res.Code)
+		if len(res.Msg) > 0 {
+			_, _ = w.Write([]byte(res.Msg))
+		}
+	}()
+	log.Infof("http request: [%s]", r.URL.Path)
+
+	if name == "" {
+		res.Code = 400
+		res.Msg = "proxy name required"
+		return
+	}
+
+	if err := svr.ctlManager.KickByProxyName(name); err != nil {
+		res.Code = 404
+		res.Msg = err.Error()
+		return
+	}
+
+	res.Msg = "ok"
 }
 
 func (svr *Service) getProxyStatsByTypeAndName(proxyType string, proxyName string) (proxyInfo GetProxyStatsResp, code int, msg string) {

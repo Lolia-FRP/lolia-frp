@@ -94,6 +94,28 @@ func (cm *ControlManager) Close() error {
 	return nil
 }
 
+// KickByProxyName finds the Control that manages the given proxy (tunnel) name and closes
+// the entire control connection (disconnects the frpc). Returns an error if no such proxy is found.
+func (cm *ControlManager) KickByProxyName(proxyName string) error {
+	cm.mu.RLock()
+	var target *Control
+	for _, ctl := range cm.ctlsByRunID {
+		ctl.mu.RLock()
+		_, ok := ctl.proxies[proxyName]
+		ctl.mu.RUnlock()
+		if ok {
+			target = ctl
+			break
+		}
+	}
+	cm.mu.RUnlock()
+
+	if target == nil {
+		return fmt.Errorf("no proxy found with name [%s]", proxyName)
+	}
+	return target.Close()
+}
+
 type Control struct {
 	// all resource managers and controllers
 	rc *controller.ResourceController
