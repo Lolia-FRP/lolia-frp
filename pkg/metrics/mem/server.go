@@ -206,8 +206,9 @@ func (m *serverMetrics) GetProxiesByType(proxyType string) []*ProxyStats {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	filterAll := proxyType == "" || proxyType == "all"
 	for name, proxyStats := range m.info.ProxyStatistics {
-		if proxyStats.ProxyType != proxyType {
+		if !filterAll && proxyStats.ProxyType != proxyType {
 			continue
 		}
 
@@ -233,8 +234,9 @@ func (m *serverMetrics) GetProxiesByTypeAndName(proxyType string, proxyName stri
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	filterAll := proxyType == "" || proxyType == "all"
 	for name, proxyStats := range m.info.ProxyStatistics {
-		if proxyStats.ProxyType != proxyType {
+		if !filterAll && proxyStats.ProxyType != proxyType {
 			continue
 		}
 

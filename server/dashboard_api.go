@@ -55,6 +55,7 @@ func (svr *Service) registerRouteHandlers(helper *httppkg.RouterRegisterHelper) 
 	subRouter.HandleFunc("/api/proxy/{type}/{name}/kick", svr.apiKickProxyByTypeAndName).Methods("POST")
 	subRouter.HandleFunc("/api/traffic/{name}", svr.apiProxyTraffic).Methods("GET")
 	subRouter.HandleFunc("/api/proxies", svr.deleteProxies).Methods("DELETE")
+	subRouter.HandleFunc("/api/proxies", svr.apiProxiesAll).Methods("GET")
 
 	// view
 	subRouter.Handle("/favicon.ico", http.FileServer(helper.AssetsFS)).Methods("GET")
@@ -212,6 +213,29 @@ type GetProxyInfoResp struct {
 	Proxies []*ProxyStatsInfo `json:"proxies"`
 }
 
+// GET /api/proxies
+// Return all proxies across types (tcp, udp, http, https, stcp, xtcp, tcpmux)
+func (svr *Service) apiProxiesAll(w http.ResponseWriter, r *http.Request) {
+	res := GeneralResponse{Code: 200}
+	defer func() {
+		log.Infof("http response [%s]: code [%d]", r.URL.Path, res.Code)
+		w.WriteHeader(res.Code)
+		if len(res.Msg) > 0 {
+			_, _ = w.Write([]byte(res.Msg))
+		}
+	}()
+	log.Infof("http request: [%s]", r.URL.Path)
+
+	proxyInfoResp := GetProxyInfoResp{}
+	proxyInfoResp.Proxies = svr.getProxyStatsByType("all")
+	slices.SortFunc(proxyInfoResp.Proxies, func(a, b *ProxyStatsInfo) int {
+		return cmp.Compare(a.Name, b.Name)
+	})
+
+	buf, _ := json.Marshal(&proxyInfoResp)
+	res.Msg = string(buf)
+}
+
 // /api/proxy/:type
 func (svr *Service) apiProxyByType(w http.ResponseWriter, r *http.Request) {
 	res := GeneralResponse{Code: 200}
@@ -238,6 +262,7 @@ func (svr *Service) apiProxyByType(w http.ResponseWriter, r *http.Request) {
 }
 
 func (svr *Service) getProxyStatsByType(proxyType string) (proxyInfos []*ProxyStatsInfo) {
+	// mem.StatsCollector now supports proxyType=="all" or "" to return all proxies
 	proxyStats := mem.StatsCollector.GetProxiesByType(proxyType)
 	proxyInfos = make([]*ProxyStatsInfo, 0, len(proxyStats))
 	for _, ps := range proxyStats {

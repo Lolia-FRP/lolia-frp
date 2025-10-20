@@ -14,7 +14,7 @@
 
 package version
 
-var version = "0.66.0"
+var version = "LoliaFRP 0.66.0"
 
 func Full() string {
 	return version
