@@ -52,7 +52,7 @@ func (svr *Service) registerRouteHandlers(helper *httppkg.RouterRegisterHelper) 
 	subRouter.HandleFunc("/api/serverinfo", svr.apiServerInfo).Methods("GET")
 	subRouter.HandleFunc("/api/proxy/{type}", svr.apiProxyByType).Methods("GET")
 	subRouter.HandleFunc("/api/proxy/{type}/{name}", svr.apiProxyByTypeAndName).Methods("GET")
-	subRouter.HandleFunc("/api/proxy/{type}/{name}/kick", svr.apiKickProxyByTypeAndName).Methods("POST")
+	subRouter.HandleFunc("/api/proxy/{name}/kick", svr.apiKickProxyByName).Methods("POST")
 	subRouter.HandleFunc("/api/traffic/{name}", svr.apiProxyTraffic).Methods("GET")
 	subRouter.HandleFunc("/api/proxies", svr.deleteProxies).Methods("DELETE")
 	subRouter.HandleFunc("/api/proxies", svr.apiProxiesAll).Methods("GET")
@@ -334,9 +334,9 @@ func (svr *Service) apiProxyByTypeAndName(w http.ResponseWriter, r *http.Request
 	res.Msg = string(buf)
 }
 
-// POST /api/proxy/:type/:name/kick
+// POST /api/proxy/:name/kick
 // Kick the client (frpc) that owns the proxy with given name.
-func (svr *Service) apiKickProxyByTypeAndName(w http.ResponseWriter, r *http.Request) {
+func (svr *Service) apiKickProxyByName(w http.ResponseWriter, r *http.Request) {
 	res := GeneralResponse{Code: 200}
 	params := mux.Vars(r)
 	name := params["name"]
