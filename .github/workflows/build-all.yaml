@@ -1,0 +1,93 @@
+name: Build FRP Binaries
+
+on:
+  push:
+    branches:
+      - '**'
+    tags:
+      - '**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build FRP ${{ matrix.goos }}-${{ matrix.goarch }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        goos: [linux, windows, darwin, freebsd, openbsd, android]
+        goarch: [amd64, arm, arm64]
+        exclude:
+          - goos: darwin
+            goarch: arm
+          - goos: freebsd
+            goarch: arm
+          - goos: openbsd
+            goarch: arm
+          - goos: android
+            goarch: amd64
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y zip tar make gcc g++ upx
+
+      - name: Build FRP for ${{ matrix.goos }}-${{ matrix.goarch }}
+        run: |
+          mkdir -p release/packages
+
+          echo "Building for ${{ matrix.goos }}-${{ matrix.goarch }}"
+
+          # 构建版本号
+          make
+          version=$(./bin/frps --version)
+          echo "Detected version: $version"
+
+          export GOOS=${{ matrix.goos }}
+          export GOARCH=${{ matrix.goarch }}
+          export CGO_ENABLED=0
+
+          # 构建可执行文件
+          make frpc frps
+
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            if [ -f "./bin/frpc" ]; then mv ./bin/frpc ./bin/frpc.exe; fi
+            if [ -f "./bin/frps" ]; then mv ./bin/frps ./bin/frps.exe; fi
+          fi
+
+          out_dir="release/packages/frp_${version}_${{ matrix.goos }}_${{ matrix.goarch }}"
+          mkdir -p "$out_dir"
+
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            mv ./bin/frpc.exe "$out_dir/frpc.exe"
+            mv ./bin/frps.exe "$out_dir/frps.exe"
+          else
+            mv ./bin/frpc "$out_dir/frpc"
+            mv ./bin/frps "$out_dir/frps"
+          fi
+
+          cp LICENSE "$out_dir"
+          cp -f conf/frpc.toml "$out_dir"
+          cp -f conf/frps.toml "$out_dir"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LoliaFrp_${{ matrix.goos }}_${{ matrix.goarch }}
+          path: |
+            release/packages/frp_*
+          retention-days: 7
