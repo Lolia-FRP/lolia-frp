@@ -94,8 +94,28 @@ func (cm *ControlManager) Close() error {
 	return nil
 }
 
+// CloseAllProxyByName Finds the tunnel name and closes all tunnels on the same connection.
+func (cm *ControlManager) CloseAllProxyByName(proxyName string) error {
+	cm.mu.RLock()
+	var target *Control
+	for _, ctl := range cm.ctlsByRunID {
+		ctl.mu.RLock()
+		_, ok := ctl.proxies[proxyName]
+		ctl.mu.RUnlock()
+		if ok {
+			target = ctl
+			break
+		}
+	}
+	cm.mu.RUnlock()
+	if target == nil {
+		return fmt.Errorf("no proxy found with name [%s]", proxyName)
+	}
+	return target.Close()
+}
+
 // KickByProxyName finds the Control that manages the given proxy (tunnel) name and closes
-// the entire control connection (disconnects the frpc). Returns an error if no such proxy is found.
+// Bug: The client does not display the kickout message.
 func (cm *ControlManager) KickByProxyName(proxyName string) error {
 	cm.mu.RLock()
 	var target *Control
@@ -113,6 +133,9 @@ func (cm *ControlManager) KickByProxyName(proxyName string) error {
 	if target == nil {
 		return fmt.Errorf("no proxy found with name [%s]", proxyName)
 	}
+
+	xl := target.xl
+	xl.Infof("kick client with proxy [%s] by server administrator request", proxyName)
 	return target.Close()
 }
 
