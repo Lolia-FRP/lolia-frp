@@ -220,7 +220,7 @@ func (c *Controller) HandleVisitor(m *msg.NatHoleVisitor, transporter transport.
 	// Make hole-punching decisions based on the NAT information of the client and visitor.
 	vResp, cResp, err := c.analysis(session)
 	if err != nil {
-		log.Debugf("sid [%s] analysis error: %v", err)
+		log.Debugf("sid [%s] analysis error: %v", sid, err)
 		vResp = c.GenNatHoleResponse(session.visitorMsg.TransactionID, nil, err.Error())
 		cResp = c.GenNatHoleResponse(session.clientMsg.TransactionID, nil, err.Error())
 	}

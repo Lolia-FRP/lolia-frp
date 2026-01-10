@@ -111,7 +111,7 @@ type RotateFileWriter struct {
 
 func (w *RotateFileWriter) openFile() error {
 	var err error
-	w.file, err = os.OpenFile(w.filePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	w.file, err = os.OpenFile(w.filePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	return err
 }
 
@@ -129,7 +129,9 @@ func (w *RotateFileWriter) checkRotate() error {
 		oldPath := w.filePath
 		newPath := w.filePath + "." + w.currentDate
 		if _, err := os.Stat(oldPath); err == nil {
-			os.Rename(oldPath, newPath)
+			if err := os.Rename(oldPath, newPath); err != nil {
+				return err
+			}
 		}
 
 		// Clean up old log files
