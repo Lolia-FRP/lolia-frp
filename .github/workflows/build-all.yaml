@@ -29,6 +29,7 @@ jobs:
             goarch: arm
           - goos: android
             goarch: amd64
+          # 排除 Android ARM 32位,在单独的 job 中处理
           - goos: android
             goarch: arm
 
@@ -124,6 +125,7 @@ jobs:
       - name: Build FRP for android-arm
         run: |
           mkdir -p release/packages
+          mkdir -p bin
           
           echo "Building for android-arm with CGO"
           
@@ -143,11 +145,24 @@ jobs:
           export CC=$PWD/android-ndk-r26c/toolchains/llvm/prebuilt/linux-x86_64/bin/armv7a-linux-androideabi21-clang
           export CXX=$PWD/android-ndk-r26c/toolchains/llvm/prebuilt/linux-x86_64/bin/armv7a-linux-androideabi21-clang++
           
-          echo "CC: $CC"
-          echo "Building frpc and frps with CGO enabled..."
+          echo "Environment:"
+          echo "GOOS=$GOOS"
+          echo "GOARCH=$GOARCH"
+          echo "GOARM=$GOARM"
+          echo "CGO_ENABLED=$CGO_ENABLED"
+          echo "CC=$CC"
           
-          # 构建可执行文件
-          make frpc frps
+          # 直接使用 go build 命令，不通过 Makefile，防止 CGO_ENABLED 被覆盖
+          echo "Building frps..."
+          go build -trimpath -ldflags "-s -w" -tags frps -o bin/frps ./cmd/frps
+          
+          echo "Building frpc..."
+          go build -trimpath -ldflags "-s -w" -tags frpc -o bin/frpc ./cmd/frpc
+          
+          # 验证文件已生成
+          ls -lh ./bin/
+          file ./bin/frpc
+          file ./bin/frps
           
           out_dir="release/packages/frp_${version}_android_arm"
           mkdir -p "$out_dir"
