@@ -29,6 +29,8 @@ jobs:
             goarch: arm
           - goos: android
             goarch: amd64
+          - goos: android
+            goarch: arm
 
     steps:
       - name: Checkout source
@@ -88,6 +90,82 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: LoliaFrp_${{ matrix.goos }}_${{ matrix.goarch }}
+          path: |
+            release/packages/frp_*
+          retention-days: 7
+
+  build-android-arm:
+    name: Build FRP android-arm
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Install dependencies and Android NDK
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y zip tar make gcc g++ upx wget unzip
+          
+          # 下载并安装 Android NDK
+          echo "Downloading Android NDK..."
+          wget -q https://dl.google.com/android/repository/android-ndk-r26c-linux.zip
+          echo "Extracting Android NDK..."
+          unzip -q android-ndk-r26c-linux.zip
+          echo "NDK installed at: $PWD/android-ndk-r26c"
+
+      - name: Build FRP for android-arm
+        run: |
+          mkdir -p release/packages
+          
+          echo "Building for android-arm with CGO"
+          
+          # 首先构建一次获取版本号
+          CGO_ENABLED=0 make
+          version=$(./bin/frps --version)
+          echo "Detected version: $version"
+          
+          # 清理之前的构建
+          rm -rf ./bin/*
+          
+          # 设置 Android ARM 交叉编译环境
+          export GOOS=android
+          export GOARCH=arm
+          export GOARM=7
+          export CGO_ENABLED=1
+          export CC=$PWD/android-ndk-r26c/toolchains/llvm/prebuilt/linux-x86_64/bin/armv7a-linux-androideabi21-clang
+          export CXX=$PWD/android-ndk-r26c/toolchains/llvm/prebuilt/linux-x86_64/bin/armv7a-linux-androideabi21-clang++
+          
+          echo "CC: $CC"
+          echo "Building frpc and frps with CGO enabled..."
+          
+          # 构建可执行文件
+          make frpc frps
+          
+          out_dir="release/packages/frp_${version}_android_arm"
+          mkdir -p "$out_dir"
+          
+          mv ./bin/frpc "$out_dir/frpc"
+          mv ./bin/frps "$out_dir/frps"
+          
+          cp LICENSE "$out_dir"
+          cp -f conf/frpc.toml "$out_dir"
+          cp -f conf/frps.toml "$out_dir"
+          
+          echo "Build completed for android-arm"
+          ls -lh "$out_dir"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LoliaFrp_android_arm
           path: |
             release/packages/frp_*
           retention-days: 7
