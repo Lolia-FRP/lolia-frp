@@ -16,7 +16,9 @@ package client
 
 import (
 	"context"
+	"fmt"
 	"net"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -167,9 +169,44 @@ func (ctl *Control) handleNewProxyResp(m msg.Message) {
 	// Start a new proxy handler if no error got
 	err := ctl.pm.StartProxy(inMsg.ProxyName, inMsg.RemoteAddr, inMsg.Error)
 	if err != nil {
-		xl.Warnf("[%s] start error: %v", inMsg.ProxyName, err)
+		xl.Warnf("[%s] 启动失败: %v", inMsg.ProxyName, err)
 	} else {
-		xl.Infof("[%s] start proxy success", inMsg.ProxyName)
+		xl.Infof("[%s] 成功启动隧道", inMsg.ProxyName)
+		if inMsg.RemoteAddr != "" {
+			// Get proxy type to format access message
+			if status, ok := ctl.pm.GetProxyStatus(inMsg.ProxyName); ok {
+				proxyType := status.Type
+				remoteAddr := inMsg.RemoteAddr
+				var accessMsg string
+
+				switch proxyType {
+				case "tcp", "udp", "stcp", "xtcp", "sudp", "tcpmux":
+					// If remoteAddr only contains port (e.g., ":8080"), prepend server address
+					if strings.HasPrefix(remoteAddr, ":") {
+						serverAddr := ctl.sessionCtx.Common.ServerAddr
+						remoteAddr = serverAddr + remoteAddr
+					}
+					accessMsg = fmt.Sprintf("您可通过 %s 访问您的服务", remoteAddr)
+				case "http", "https":
+					// Format as URL with protocol
+					protocol := proxyType
+					addr := remoteAddr
+					// Remove standard ports for cleaner URL
+					if proxyType == "http" && strings.HasSuffix(addr, ":80") {
+						addr = strings.TrimSuffix(addr, ":80")
+					} else if proxyType == "https" && strings.HasSuffix(addr, ":443") {
+						addr = strings.TrimSuffix(addr, ":443")
+					}
+					accessMsg = fmt.Sprintf("您可通过 %s://%s 访问您的服务", protocol, addr)
+				default:
+					accessMsg = fmt.Sprintf("您可通过 %s 访问您的服务", remoteAddr)
+				}
+
+				xl.Infof("[%s] %s", inMsg.ProxyName, accessMsg)
+			} else {
+				xl.Infof("[%s] 您可通过 %s 访问您的服务", inMsg.ProxyName, inMsg.RemoteAddr)
+			}
+		}
 	}
 }
 
