@@ -224,8 +224,8 @@ func runClientWithToken(token string, unsafeFeatures *security.UnsafeFeatures) e
 	}
 
 	// Fetch config from API
-	// #nosec G107 -- URL is constructed from trusted source (environment variable or hardcoded)
 	url := fmt.Sprintf("%s/api/v1/tunnel/frpc/config/%s", apiServer, token)
+	// #nosec G107 -- URL is constructed from trusted source (environment variable or hardcoded)
 	resp, err := http.Get(url)
 	if err != nil {
 		return fmt.Errorf("failed to fetch config from API: %v", err)
