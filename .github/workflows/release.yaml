@@ -1,0 +1,316 @@
+name: Release FRP Binaries
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g., v1.0.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build FRP ${{ matrix.goos }}-${{ matrix.goarch }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        goos: [linux, windows, darwin, freebsd, openbsd, android]
+        goarch: [amd64, arm, arm64]
+        exclude:
+          - goos: darwin
+            goarch: arm
+          - goos: freebsd
+            goarch: arm
+          - goos: openbsd
+            goarch: arm
+          - goos: android
+            goarch: amd64
+          - goos: android
+            goarch: arm
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y zip tar make gcc g++ upx
+
+      - name: Build FRP for ${{ matrix.goos }}-${{ matrix.goarch }}
+        run: |
+          mkdir -p release/packages
+
+          echo "Building for ${{ matrix.goos }}-${{ matrix.goarch }}"
+
+          # 构建版本号
+          make
+          version=$(./bin/frps --version)
+          echo "Detected version: $version"
+
+          export GOOS=${{ matrix.goos }}
+          export GOARCH=${{ matrix.goarch }}
+          export CGO_ENABLED=0
+
+          # 构建可执行文件
+          make frpc frps
+
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            if [ -f "./bin/frpc" ]; then mv ./bin/frpc ./bin/frpc.exe; fi
+            if [ -f "./bin/frps" ]; then mv ./bin/frps ./bin/frps.exe; fi
+          fi
+
+          out_dir="release/packages/frp_${version}_${{ matrix.goos }}_${{ matrix.goarch }}"
+          mkdir -p "$out_dir"
+
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            mv ./bin/frpc.exe "$out_dir/frpc.exe"
+            mv ./bin/frps.exe "$out_dir/frps.exe"
+          else
+            mv ./bin/frpc "$out_dir/frpc"
+            mv ./bin/frps "$out_dir/frps"
+          fi
+
+          cp LICENSE "$out_dir"
+          cp -f conf/frpc.toml "$out_dir"
+          cp -f conf/frps.toml "$out_dir"
+
+          # 压缩打包
+          cd release/packages
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            zip -r "frp_${version}_${{ matrix.goos }}_${{ matrix.goarch }}.zip" "frp_${version}_${{ matrix.goos }}_${{ matrix.goarch }}"
+          else
+            tar -czf "frp_${version}_${{ matrix.goos }}_${{ matrix.goarch }}.tar.gz" "frp_${version}_${{ matrix.goos }}_${{ matrix.goarch }}"
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LoliaFrp_${{ matrix.goos }}_${{ matrix.goarch }}
+          path: |
+            release/packages/*.zip
+            release/packages/*.tar.gz
+          retention-days: 1
+
+  build-android-arm:
+    name: Build FRP android-arm
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Install dependencies and Android NDK
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y zip tar make gcc g++ upx wget unzip
+          
+          # 下载并安装 Android NDK
+          echo "Downloading Android NDK..."
+          wget -q https://dl.google.com/android/repository/android-ndk-r26c-linux.zip
+          echo "Extracting Android NDK..."
+          unzip -q android-ndk-r26c-linux.zip
+          echo "NDK installed at: $PWD/android-ndk-r26c"
+
+      - name: Build FRP for android-arm
+        run: |
+          mkdir -p release/packages
+          mkdir -p bin
+          
+          echo "Building for android-arm with CGO"
+          
+          # 首先构建一次获取版本号
+          CGO_ENABLED=0 make
+          version=$(./bin/frps --version)
+          echo "Detected version: $version"
+          
+          # 清理之前的构建
+          rm -rf ./bin/*
+          
+          # 设置 Android ARM 交叉编译环境
+          export GOOS=android
+          export GOARCH=arm
+          export GOARM=7
+          export CGO_ENABLED=1
+          export CC=$PWD/android-ndk-r26c/toolchains/llvm/prebuilt/linux-x86_64/bin/armv7a-linux-androideabi21-clang
+          export CXX=$PWD/android-ndk-r26c/toolchains/llvm/prebuilt/linux-x86_64/bin/armv7a-linux-androideabi21-clang++
+          
+          echo "Environment:"
+          echo "GOOS=$GOOS"
+          echo "GOARCH=$GOARCH"
+          echo "GOARM=$GOARM"
+          echo "CGO_ENABLED=$CGO_ENABLED"
+          echo "CC=$CC"
+          
+          # 直接使用 go build 命令
+          echo "Building frps..."
+          go build -trimpath -ldflags "-s -w" -tags frps -o bin/frps ./cmd/frps
+          
+          echo "Building frpc..."
+          go build -trimpath -ldflags "-s -w" -tags frpc -o bin/frpc ./cmd/frpc
+          
+          # 验证文件已生成
+          ls -lh ./bin/
+          file ./bin/frpc
+          file ./bin/frps
+          
+          out_dir="release/packages/frp_${version}_android_arm"
+          mkdir -p "$out_dir"
+          
+          mv ./bin/frpc "$out_dir/frpc"
+          mv ./bin/frps "$out_dir/frps"
+          
+          cp LICENSE "$out_dir"
+          cp -f conf/frpc.toml "$out_dir"
+          cp -f conf/frps.toml "$out_dir"
+          
+          # 压缩打包
+          cd release/packages
+          tar -czf "frp_${version}_android_arm.tar.gz" "frp_${version}_android_arm"
+          
+          echo "Build completed for android-arm"
+          ls -lh .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LoliaFrp_android_arm
+          path: |
+            release/packages/*.tar.gz
+          retention-days: 1
+
+  release:
+    name: Create Release
+    needs: [build, build-android-arm]
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Organize release files
+        run: |
+          mkdir -p release_files
+          find artifacts -type f \( -name "*.zip" -o -name "*.tar.gz" \) -exec cp {} release_files/ \;
+          ls -lh release_files/
+
+      - name: Generate checksums
+        run: |
+          cd release_files
+          sha256sum * > sha256sum.txt
+          cat sha256sum.txt
+
+      - name: Get tag name
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build Changelog
+        id: changelog
+        uses: mikepenz/release-changelog-builder-action@v4
+        with:
+          configuration: |
+            {
+              "categories": [
+                {
+                  "title": "## 🚀 Features",
+                  "labels": ["feature", "feat", "enhancement"]
+                },
+                {
+                  "title": "## 🐛 Bug Fixes",
+                  "labels": ["fix", "bug", "bugfix"]
+                },
+                {
+                  "title": "## 📝 Documentation",
+                  "labels": ["docs", "documentation"]
+                },
+                {
+                  "title": "## 🔧 Maintenance",
+                  "labels": ["chore", "refactor", "perf"]
+                },
+                {
+                  "title": "## 📦 Dependencies",
+                  "labels": ["dependencies", "deps"]
+                },
+                {
+                  "title": "## 🔀 Other Changes",
+                  "labels": []
+                }
+              ],
+              "template": "#{{CHANGELOG}}\n\n## 📥 Download\n\n### Checksums (SHA256)\n\n```\n${{ steps.checksums.outputs.content }}\n```\n\n**Full Changelog**: #{{RELEASE_DIFF}}",
+              "pr_template": "- #{{TITLE}} by @#{{AUTHOR}} in ##{{NUMBER}}",
+              "empty_template": "- No changes",
+              "label_extractor": [
+                {
+                  "pattern": "^(feat|feature)(\\(.+\\))?:",
+                  "target": "feature"
+                },
+                {
+                  "pattern": "^fix(\\(.+\\))?:",
+                  "target": "fix"
+                },
+                {
+                  "pattern": "^docs(\\(.+\\))?:",
+                  "target": "docs"
+                },
+                {
+                  "pattern": "^(chore|refactor|perf)(\\(.+\\))?:",
+                  "target": "chore"
+                }
+              ]
+            }
+          toTag: ${{ steps.tag.outputs.tag }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Save checksums for changelog
+        id: checksums
+        run: |
+          {
+            echo 'content<<EOF'
+            cat release_files/sha256sum.txt
+            echo EOF
+          } >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: Release ${{ steps.tag.outputs.tag }}
+          body: ${{ steps.changelog.outputs.changelog }}
+          draft: false
+          prerelease: false
+          files: |
+            release_files/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
