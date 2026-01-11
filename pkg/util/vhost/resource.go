@@ -82,7 +82,7 @@ const (
 </head>
 <body>
     <div class="container">
-        <h1>域名未绑定绑定</h1>
+        <h1>域名未绑定</h1>
         <p>这个域名还没有绑定到任何隧道哦 (；д；)</p>
         <p><strong>可能是这些原因：</strong></p>
         <ul>
