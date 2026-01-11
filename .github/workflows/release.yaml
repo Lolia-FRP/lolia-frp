@@ -47,17 +47,49 @@ jobs:
         with:
           path: artifacts
 
+      - name: Display artifact structure
+        run: |
+          echo "Artifact structure:"
+          ls -R artifacts/
+
       - name: Organize release files
         run: |
           mkdir -p release_files
+          
+          # 查找并复制所有压缩包
           find artifacts -type f \( -name "*.zip" -o -name "*.tar.gz" \) -exec cp {} release_files/ \;
+          
+          # 如果没有压缩包，尝试查找二进制文件并打包
+          if [ -z "$(ls -A release_files/)" ]; then
+            echo "No archives found, looking for directories to package..."
+            for dir in artifacts/*/; do
+              if [ -d "$dir" ]; then
+                artifact_name=$(basename "$dir")
+                echo "Packaging $artifact_name"
+                
+                # 检查是否是 Windows 构建
+                if echo "$artifact_name" | grep -q "windows"; then
+                  (cd "$dir" && zip -r "../../release_files/${artifact_name}.zip" .)
+                else
+                  tar -czf "release_files/${artifact_name}.tar.gz" -C "$dir" .
+                fi
+              fi
+            done
+          fi
+          
+          echo "Files in release_files:"
           ls -lh release_files/
 
       - name: Generate checksums
         run: |
           cd release_files
-          sha256sum * > sha256sum.txt
-          cat sha256sum.txt
+          if [ -n "$(ls -A .)" ]; then
+            sha256sum * > sha256sum.txt
+            cat sha256sum.txt
+          else
+            echo "No files to generate checksums for!"
+            exit 1
+          fi
 
       - name: Save checksums for changelog
         id: checksums
