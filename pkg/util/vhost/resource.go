@@ -28,23 +28,70 @@ var NotFoundPagePath = ""
 
 const (
 	NotFound = `<!DOCTYPE html>
-<html>
+<html lang="zh-CN">
 <head>
-<title>Not Found</title>
-<style>
-    body {
-        width: 35em;
-        margin: 0 auto;
-        font-family: Tahoma, Verdana, Arial, sans-serif;
-    }
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>404 - 未绑定域名</title>
+    <style>
+        body {
+            font-family: -apple-system, sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            background: #fff;
+            color: #333;
+        }
+        .container {
+            max-width: 600px;
+            padding: 40px 20px;
+            text-align: center;
+        }
+        h1 { 
+            font-size: 32px; 
+            font-weight: 600;
+            margin-bottom: 20px; 
+        }
+        p { 
+            line-height: 1.8; 
+            color: #666; 
+            margin: 10px 0;
+        }
+        ul {
+            text-align: left;
+            margin: 20px auto;
+            max-width: 400px;
+        }
+        li {
+            margin: 8px 0;
+            color: #666;
+        }
+        a { 
+            color: #0066cc; 
+            text-decoration: none;
+        }
+        a:hover { text-decoration: underline; }
+        .footer {
+            margin-top: 40px;
+            font-size: 14px;
+            color: #999;
+        }
+    </style>
 </head>
 <body>
-<h1>The page you requested was not found.</h1>
-<p>Sorry, the page you are looking for is currently unavailable.<br/>
-Please try again later.</p>
-<p>The server is powered by <a href="https://github.com/fatedier/frp">frp</a>.</p>
-<p><em>Faithfully yours, frp.</em></p>
+    <div class="container">
+        <h1>域名未绑定绑定</h1>
+        <p>这个域名还没有绑定到任何隧道哦 (；д；)</p>
+        <p><strong>可能是这些原因：</strong></p>
+        <ul>
+            <li>域名配置不对，或者没有正确解析</li>
+            <li>隧道可能还没启动，或者已经停止</li>
+            <li>自定义域名忘记在服务端配置了</li>
+        </ul>
+        <div class="footer">由 <a href="https://lolia.link/">LoliaFRP</a> 与捐赠者们用爱发电</div>
+    </div>
 </body>
 </html>
 `
@@ -69,7 +116,7 @@ func getNotFoundPageContent() []byte {
 
 func NotFoundResponse() *http.Response {
 	header := make(http.Header)
-	header.Set("server", "frp/"+version.Full())
+	header.Set("server", version.Full())
 	header.Set("Content-Type", "text/html")
 
 	content := getNotFoundPageContent()
