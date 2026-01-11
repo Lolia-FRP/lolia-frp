@@ -17,7 +17,7 @@ permissions:
 jobs:
   # 调用 build-all workflow
   build:
-    uses: ./.github/workflows/build-all.yml
+    uses: Lolia-FRP/lolia-frp/github/workflows/build-all.yml
     permissions:
       contents: read
 
