@@ -48,7 +48,7 @@ var (
 	showVersion      bool
 	strictConfigMode bool
 	allowUnsafe      []string
-	authToken        string
+	authTokens       []string
 )
 
 func init() {
@@ -56,7 +56,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&cfgDir, "config_dir", "", "", "config directory, run one frpc service for each file in config directory")
 	rootCmd.PersistentFlags().BoolVarP(&showVersion, "version", "v", false, "version of frpc")
 	rootCmd.PersistentFlags().BoolVarP(&strictConfigMode, "strict_config", "", true, "strict config parsing mode, unknown fields will cause an errors")
-	rootCmd.PersistentFlags().StringVarP(&authToken, "token", "t", "", "authentication token of frpc (LoliaFRP only)")
+	rootCmd.PersistentFlags().StringSliceVarP(&authTokens, "token", "t", []string{}, "authentication tokens in format 'id:token' (LoliaFRP only)")
 	rootCmd.PersistentFlags().StringSliceVarP(&allowUnsafe, "allow-unsafe", "", []string{},
 		fmt.Sprintf("allowed unsafe features, one or more of: %s", strings.Join(security.ClientUnsafeFeatures, ", ")))
 }
@@ -72,9 +72,9 @@ var rootCmd = &cobra.Command{
 
 		unsafeFeatures := security.NewUnsafeFeatures(allowUnsafe)
 
-		// If authToken is provided, fetch config from API
-		if authToken != "" {
-			err := runClientWithToken(authToken, unsafeFeatures)
+		// If authTokens is provided, fetch config from API
+		if len(authTokens) > 0 {
+			err := runClientWithTokens(authTokens, unsafeFeatures)
 			if err != nil {
 				fmt.Println(err)
 				os.Exit(1)
@@ -216,15 +216,58 @@ type APIResponse struct {
 	} `json:"data"`
 }
 
-func runClientWithToken(token string, unsafeFeatures *security.UnsafeFeatures) error {
+// TokenInfo stores parsed id and token from the -t parameter
+type TokenInfo struct {
+	ID    string
+	Token string
+}
+
+func runClientWithTokens(tokens []string, unsafeFeatures *security.UnsafeFeatures) error {
+	// Parse all tokens (format: id:token)
+	tokenInfos := make([]TokenInfo, 0, len(tokens))
+	for _, t := range tokens {
+		parts := strings.SplitN(t, ":", 2)
+		if len(parts) != 2 {
+			return fmt.Errorf("invalid token format '%s', expected 'id:token'", t)
+		}
+		tokenInfos = append(tokenInfos, TokenInfo{
+			ID:    strings.TrimSpace(parts[0]),
+			Token: strings.TrimSpace(parts[1]),
+		})
+	}
+
+	// Group tokens by token value (same token can have multiple IDs)
+	tokenToIDs := make(map[string][]string)
+	for _, ti := range tokenInfos {
+		tokenToIDs[ti.Token] = append(tokenToIDs[ti.Token], ti.ID)
+	}
+
+	// Verify all tokens use the same token value
+	if len(tokenToIDs) > 1 {
+		return fmt.Errorf("different tokens are not supported, all ids must use the same token")
+	}
+
+	// Get the single token and all its IDs
+	var token string
+	var ids []string
+	for t, idList := range tokenToIDs {
+		token = t
+		ids = idList
+		break
+	}
+
+	return runClientWithTokenAndIDs(token, ids, unsafeFeatures)
+}
+
+func runClientWithTokenAndIDs(token string, ids []string, unsafeFeatures *security.UnsafeFeatures) error {
 	// Get API server address from environment variable
 	apiServer := os.Getenv("LOLIA_API")
 	if apiServer == "" {
 		apiServer = "https://api.lolia.link"
 	}
 
-	// Fetch config from API
-	url := fmt.Sprintf("%s/api/v1/tunnel/frpc/config/%s", apiServer, token)
+	// Build URL with query parameters
+	url := fmt.Sprintf("%s/api/v1/tunnel/frpc/config?token=%s&id=%s", apiServer, token, strings.Join(ids, ","))
 	// #nosec G107 -- URL is constructed from trusted source (environment variable or hardcoded)
 	resp, err := http.Get(url)
 	if err != nil {

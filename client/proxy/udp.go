@@ -90,7 +90,7 @@ func (pxy *UDPProxy) Close() {
 
 func (pxy *UDPProxy) InWorkConn(conn net.Conn, _ *msg.StartWorkConn) {
 	xl := pxy.xl
-	xl.Infof("incoming a new work connection for udp proxy, %s", conn.RemoteAddr().String())
+	xl.Infof("收到一条新的 UDP 代理工作连接, %s", conn.RemoteAddr().String())
 	// close resources related with old workConn
 	pxy.Close()
 
