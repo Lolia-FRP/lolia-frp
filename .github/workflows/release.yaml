@@ -3,11 +3,11 @@ name: Release FRP Binaries
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag to release (e.g., v1.0.0)'
+        description: "Tag to release (e.g., v1.0.0)"
         required: true
         type: string
 
@@ -26,7 +26,7 @@ jobs:
     name: Create Release
     needs: build
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
@@ -55,10 +55,10 @@ jobs:
       - name: Organize release files
         run: |
           mkdir -p release_files
-          
+
           # 查找并复制所有压缩包
           find artifacts -type f \( -name "*.zip" -o -name "*.tar.gz" \) -exec cp {} release_files/ \;
-          
+
           # 如果没有压缩包，尝试查找二进制文件并打包
           if [ -z "$(ls -A release_files/)" ]; then
             echo "No archives found, looking for directories to package..."
@@ -76,7 +76,7 @@ jobs:
               fi
             done
           fi
-          
+
           echo "Files in release_files:"
           ls -lh release_files/
 
@@ -100,11 +100,26 @@ jobs:
             echo EOF
           } >> $GITHUB_OUTPUT
 
+      - name: Debug - Check tags and commits
+        run: |
+          echo "Current tag: ${{ steps.tag.outputs.tag }}"
+          PREV_TAG=$(git describe --tags --abbrev=0 ${{ steps.tag.outputs.tag }}^ 2>/dev/null || echo "none")
+          echo "Previous tag: $PREV_TAG"
+
+          echo ""
+          echo "Commits between tags:"
+          if [ "$PREV_TAG" != "none" ]; then
+            git log --oneline $PREV_TAG..${{ steps.tag.outputs.tag }}
+          else
+            echo "First tag, showing all commits:"
+            git log --oneline ${{ steps.tag.outputs.tag }}
+          fi
+
       - name: Build Changelog
         id: changelog
         uses: mikepenz/release-changelog-builder-action@v4
         with:
-          configuration: |
+          configurationJson: |
             {
               "categories": [
                 {
@@ -134,30 +149,51 @@ jobs:
               ],
               "template": "#{{CHANGELOG}}\n\n## 📥 Download\n\n### Checksums (SHA256)\n\n```\n${{ steps.checksums.outputs.content }}\n```\n\n**Full Changelog**: #{{RELEASE_DIFF}}",
               "pr_template": "- #{{TITLE}} by @#{{AUTHOR}} in ##{{NUMBER}}",
-              "empty_template": "- No changes",
+              "commit_template": "- #{{TITLE}} by @#{{AUTHOR}}",
+              "empty_template": "- No changes in this release",
+              "mode": "COMMIT",
+              "sort": {
+                "order": "ASC",
+                "on_property": "mergedAt"
+              },
+              "max_tags_to_fetch": 200,
+              "max_pull_requests": 200,
+              "max_back_track_time_days": 365,
               "label_extractor": [
                 {
                   "pattern": "^(feat|feature)(\\(.+\\))?:",
-                  "target": "feature"
+                  "target": "feature",
+                  "on_property": "title"
                 },
                 {
                   "pattern": "^fix(\\(.+\\))?:",
-                  "target": "fix"
+                  "target": "fix",
+                  "on_property": "title"
                 },
                 {
                   "pattern": "^docs(\\(.+\\))?:",
-                  "target": "docs"
+                  "target": "docs",
+                  "on_property": "title"
                 },
                 {
                   "pattern": "^(chore|refactor|perf)(\\(.+\\))?:",
-                  "target": "chore"
+                  "target": "chore",
+                  "on_property": "title"
+                },
+                {
+                  "pattern": "^(deps|dependencies)(\\(.+\\))?:",
+                  "target": "dependencies",
+                  "on_property": "title"
                 }
-              ]
+              ],
+              "ignore_labels": ["ignore", "no-changelog"],
+              "ignore_commits": ["skip-ci", "skip ci", "[skip ci]"]
             }
+          outputFile: CHANGELOG.md
           toTag: ${{ steps.tag.outputs.tag }}
+          commitMode: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
