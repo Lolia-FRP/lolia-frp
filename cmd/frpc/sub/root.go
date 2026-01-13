@@ -43,16 +43,18 @@ import (
 )
 
 var (
-	cfgFile          string
+	cfgFiles         []string
 	cfgDir           string
 	showVersion      bool
 	strictConfigMode bool
 	allowUnsafe      []string
 	authTokens       []string
+
+	bannerDisplayed bool
 )
 
 func init() {
-	rootCmd.PersistentFlags().StringVarP(&cfgFile, "config", "c", "./frpc.ini", "config file of frpc")
+	rootCmd.PersistentFlags().StringSliceVarP(&cfgFiles, "config", "c", []string{"./frpc.ini"}, "config files of frpc (support multiple files)")
 	rootCmd.PersistentFlags().StringVarP(&cfgDir, "config_dir", "", "", "config directory, run one frpc service for each file in config directory")
 	rootCmd.PersistentFlags().BoolVarP(&showVersion, "version", "v", false, "version of frpc")
 	rootCmd.PersistentFlags().BoolVarP(&strictConfigMode, "strict_config", "", true, "strict config parsing mode, unknown fields will cause an errors")
@@ -83,14 +85,19 @@ var rootCmd = &cobra.Command{
 		}
 
 		// If cfgDir is not empty, run multiple frpc service for each config file in cfgDir.
-		// Note that it's only designed for testing. It's not guaranteed to be stable.
 		if cfgDir != "" {
 			_ = runMultipleClients(cfgDir, unsafeFeatures)
 			return nil
 		}
 
+		// If multiple config files are specified, run one frpc service for each file
+		if len(cfgFiles) > 1 {
+			_ = runMultipleClientsFromFiles(cfgFiles, unsafeFeatures)
+			return nil
+		}
+
 		// Do not show command usage here.
-		err := runClient(cfgFile, unsafeFeatures)
+		err := runClient(cfgFiles[0], unsafeFeatures)
 		if err != nil {
 			fmt.Println(err)
 			os.Exit(1)
@@ -118,6 +125,30 @@ func runMultipleClients(cfgDir string, unsafeFeatures *security.UnsafeFeatures) 
 	})
 	wg.Wait()
 	return err
+}
+
+func runMultipleClientsFromFiles(cfgFiles []string, unsafeFeatures *security.UnsafeFeatures) error {
+	var wg sync.WaitGroup
+
+	// Display banner first
+	banner.DisplayBanner()
+	bannerDisplayed = true
+	log.Infof("检测到 %d 个配置文件，将启动多个 frpc 服务实例", len(cfgFiles))
+
+	for i, cfgFile := range cfgFiles {
+		wg.Add(1)
+		// Add a small delay to avoid log output mixing
+		time.Sleep(100 * time.Millisecond)
+		go func(index int, path string) {
+			defer wg.Done()
+			err := runClient(path, unsafeFeatures)
+			if err != nil {
+				fmt.Printf("\n配置文件 [%s] 启动失败: %v\n", path, err)
+			}
+		}(i, cfgFile)
+	}
+	wg.Wait()
+	return nil
 }
 
 func Execute() {
@@ -172,10 +203,11 @@ func startService(
 ) error {
 	log.InitLogger(cfg.Log.To, cfg.Log.Level, int(cfg.Log.MaxDays), cfg.Log.DisablePrintColor)
 
-	// Display banner before starting the service
-	banner.DisplayBanner()
-
-	log.Infof("Nya! %s 启动中", version.Full())
+	// Display banner only once before starting the first service
+	if !bannerDisplayed {
+		banner.DisplayBanner()
+		bannerDisplayed = true
+	}
 
 	// Display node information if available
 	if nodeName != "" {
@@ -242,9 +274,9 @@ func runClientWithTokens(tokens []string, unsafeFeatures *security.UnsafeFeature
 		tokenToIDs[ti.Token] = append(tokenToIDs[ti.Token], ti.ID)
 	}
 
-	// Verify all tokens use the same token value
+	// If we have multiple different tokens, start one service for each token group
 	if len(tokenToIDs) > 1 {
-		return fmt.Errorf("different tokens are not supported, all ids must use the same token")
+		return runMultipleClientsWithTokens(tokenToIDs, unsafeFeatures)
 	}
 
 	// Get the single token and all its IDs
@@ -296,6 +328,45 @@ func runClientWithTokenAndIDs(token string, ids []string, unsafeFeatures *securi
 
 	// Load config directly from bytes
 	return runClientWithConfig(configBytes, unsafeFeatures, apiResp.Data.NodeName, apiResp.Data.TunnelRemark)
+}
+
+func runMultipleClientsWithTokens(tokenToIDs map[string][]string, unsafeFeatures *security.UnsafeFeatures) error {
+	var wg sync.WaitGroup
+
+	// Display banner first
+	banner.DisplayBanner()
+	bannerDisplayed = true
+	log.Infof("检测到 %d 个不同的 token，将并行启动多个 frpc 服务实例", len(tokenToIDs))
+
+	index := 0
+	for token, ids := range tokenToIDs {
+		wg.Add(1)
+		currentIndex := index
+		currentToken := token
+		currentIDs := ids
+		totalCount := len(tokenToIDs)
+
+		// Add a small delay to avoid log output mixing
+		time.Sleep(100 * time.Millisecond)
+
+		go func() {
+			defer wg.Done()
+			maskedToken := currentToken
+			if len(maskedToken) > 6 {
+				maskedToken = maskedToken[:3] + "***" + maskedToken[len(maskedToken)-3:]
+			} else {
+				maskedToken = "***"
+			}
+			log.Infof("[%d/%d] 启动 token: %s (IDs: %v)", currentIndex+1, totalCount, maskedToken, currentIDs)
+			err := runClientWithTokenAndIDs(currentToken, currentIDs, unsafeFeatures)
+			if err != nil {
+				fmt.Printf("\nToken [%s] 启动失败: %v\n", maskedToken, err)
+			}
+		}()
+		index++
+	}
+	wg.Wait()
+	return nil
 }
 
 func runClientWithConfig(configBytes []byte, unsafeFeatures *security.UnsafeFeatures, nodeName, tunnelRemark string) error {

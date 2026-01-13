@@ -54,7 +54,11 @@ func NewAdminCommand(name, short string, handler func(*v1.ClientCommonConfig) er
 		Use:   name,
 		Short: short,
 		Run: func(cmd *cobra.Command, args []string) {
-			cfg, _, _, _, err := config.LoadClientConfig(cfgFile, strictConfigMode)
+			if len(cfgFiles) == 0 || cfgFiles[0] == "" {
+				fmt.Println("frpc: the configuration file is not specified")
+				os.Exit(1)
+			}
+			cfg, _, _, _, err := config.LoadClientConfig(cfgFiles[0], strictConfigMode)
 			if err != nil {
 				fmt.Println(err)
 				os.Exit(1)

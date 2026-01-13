@@ -1,6 +1,11 @@
 package banner
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/fatedier/frp/pkg/util/log"
+	"github.com/fatedier/frp/pkg/util/version"
+)
 
 func DisplayBanner() {
 	fmt.Println("    __          ___       __________  ____        ________    ____")
@@ -9,4 +14,5 @@ func DisplayBanner() {
 	fmt.Println(" / /___/ /_/ / / / /_/ / __/ / _, _/ ____/_____/ /___/ /____/ /   ")
 	fmt.Println("/_____/\\____/_/_/\\__,_/_/   /_/ |_/_/          \\____/_____/___/   ")
 	fmt.Println("                                                                  ")
+	log.Infof("Nya! %s 启动中", version.Full())
 }
