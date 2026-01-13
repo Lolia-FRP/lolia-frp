@@ -92,7 +92,7 @@ var rootCmd = &cobra.Command{
 
 		// If multiple config files are specified, run one frpc service for each file
 		if len(cfgFiles) > 1 {
-			_ = runMultipleClientsFromFiles(cfgFiles, unsafeFeatures)
+			runMultipleClientsFromFiles(cfgFiles, unsafeFeatures)
 			return nil
 		}
 
@@ -127,7 +127,7 @@ func runMultipleClients(cfgDir string, unsafeFeatures *security.UnsafeFeatures) 
 	return err
 }
 
-func runMultipleClientsFromFiles(cfgFiles []string, unsafeFeatures *security.UnsafeFeatures) error {
+func runMultipleClientsFromFiles(cfgFiles []string, unsafeFeatures *security.UnsafeFeatures) {
 	var wg sync.WaitGroup
 
 	// Display banner first
@@ -135,20 +135,19 @@ func runMultipleClientsFromFiles(cfgFiles []string, unsafeFeatures *security.Uns
 	bannerDisplayed = true
 	log.Infof("检测到 %d 个配置文件，将启动多个 frpc 服务实例", len(cfgFiles))
 
-	for i, cfgFile := range cfgFiles {
+	for _, cfgFile := range cfgFiles {
 		wg.Add(1)
 		// Add a small delay to avoid log output mixing
 		time.Sleep(100 * time.Millisecond)
-		go func(index int, path string) {
+		go func(path string) {
 			defer wg.Done()
 			err := runClient(path, unsafeFeatures)
 			if err != nil {
 				fmt.Printf("\n配置文件 [%s] 启动失败: %v\n", path, err)
 			}
-		}(i, cfgFile)
+		}(cfgFile)
 	}
 	wg.Wait()
-	return nil
 }
 
 func Execute() {
