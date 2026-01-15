@@ -15,8 +15,6 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME_FRPS: ghcr.io/${{ github.repository_owner }}/loliacli-frps
-  IMAGE_NAME_FRPC: ghcr.io/${{ github.repository_owner }}/loliacli-frpc
 
 jobs:
   build:
@@ -31,10 +29,10 @@ jobs:
         include:
           - name: frps
             dockerfile: dockerfiles/Dockerfile-for-frps
-            image_name: ${{ env.IMAGE_NAME_FRPS }}
+            image_name: ghcr.io/${{ github.repository_owner }}/loliacli-frps
           - name: frpc
             dockerfile: dockerfiles/Dockerfile-for-frpc
-            image_name: ${{ env.IMAGE_NAME_FRPC }}
+            image_name: ghcr.io/${{ github.repository_owner }}/loliacli-frpc
 
     steps:
       - name: Checkout code
