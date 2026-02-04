@@ -18,16 +18,20 @@ jobs:
     strategy:
       matrix:
         goos: [linux, windows, darwin, freebsd, openbsd, android]
-        goarch: [amd64, arm, arm64]
+        goarch: [amd64, 386, arm, arm64]
         exclude:
           - goos: darwin
             goarch: arm
+          - goos: darwin
+            goarch: 386
           - goos: freebsd
             goarch: arm
           - goos: openbsd
             goarch: arm
           - goos: android
             goarch: amd64
+          - goos: android
+            goarch: 386
           # 排除 Android ARM 32位,在单独的 job 中处理
           - goos: android
             goarch: arm
