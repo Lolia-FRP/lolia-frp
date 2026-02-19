@@ -329,6 +329,14 @@ type = "https2http"
 localAddr = "127.0.0.1:80"
 crtPath = "./server.crt"
 keyPath = "./server.key"
+# autoTLS can replace crtPath/keyPath and automatically apply/renew certificates.
+# [proxies.plugin.autoTLS]
+# enable = true
+# email = "admin@example.com"
+# cacheDir = "./.autotls-cache"
+# hostAllowList is optional. If omitted, frpc will use customDomains automatically.
+# hostAllowList = ["test.yourdomain.com"]
+# caDirURL = "https://acme-v02.api.letsencrypt.org/directory"
 hostHeaderRewrite = "127.0.0.1"
 requestHeaders.set.x-from-where = "frp"
 
@@ -341,6 +349,14 @@ type = "https2https"
 localAddr = "127.0.0.1:443"
 crtPath = "./server.crt"
 keyPath = "./server.key"
+# autoTLS can replace crtPath/keyPath and automatically apply/renew certificates.
+# [proxies.plugin.autoTLS]
+# enable = true
+# email = "admin@example.com"
+# cacheDir = "./.autotls-cache"
+# hostAllowList is optional. If omitted, frpc will use customDomains automatically.
+# hostAllowList = ["test.yourdomain.com"]
+# caDirURL = "https://acme-v02.api.letsencrypt.org/directory"
 hostHeaderRewrite = "127.0.0.1"
 requestHeaders.set.x-from-where = "frp"
 
@@ -373,6 +389,14 @@ type = "tls2raw"
 localAddr = "127.0.0.1:80"
 crtPath = "./server.crt"
 keyPath = "./server.key"
+# autoTLS can replace crtPath/keyPath and automatically apply/renew certificates.
+# [proxies.plugin.autoTLS]
+# enable = true
+# email = "admin@example.com"
+# cacheDir = "./.autotls-cache"
+# hostAllowList is optional. If omitted, frpc will use customDomains automatically.
+# hostAllowList = ["test.yourdomain.com"]
+# caDirURL = "https://acme-v02.api.letsencrypt.org/directory"
 
 [[proxies]]
 name = "secret_tcp"

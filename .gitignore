@@ -42,3 +42,6 @@ client.key
 
 # AI
 CLAUDE.md
+
+# TLS
+.autotls-cache
