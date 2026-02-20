@@ -30,6 +30,7 @@ import (
 
 type PluginContext struct {
 	Name           string
+	HostAllowList  []string
 	VnetController *vnet.Controller
 }
 

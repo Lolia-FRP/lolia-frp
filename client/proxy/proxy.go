@@ -19,7 +19,9 @@ import (
 	"io"
 	"net"
 	"reflect"
+	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -69,6 +71,7 @@ func NewProxy(
 
 	baseProxy := BaseProxy{
 		baseCfg:        pxyConf.GetBaseConfig(),
+		configurer:     pxyConf,
 		clientCfg:      clientCfg,
 		encryptionKey:  encryptionKey,
 		limiter:        limiter,
@@ -87,6 +90,7 @@ func NewProxy(
 
 type BaseProxy struct {
 	baseCfg        *v1.ProxyBaseConfig
+	configurer     v1.ProxyConfigurer
 	clientCfg      *v1.ClientCommonConfig
 	encryptionKey  []byte
 	msgTransporter transport.MessageTransporter
@@ -106,6 +110,7 @@ func (pxy *BaseProxy) Run() error {
 	if pxy.baseCfg.Plugin.Type != "" {
 		p, err := plugin.Create(pxy.baseCfg.Plugin.Type, plugin.PluginContext{
 			Name:           pxy.baseCfg.Name,
+			HostAllowList:  pxy.getPluginHostAllowList(),
 			VnetController: pxy.vnetController,
 		}, pxy.baseCfg.Plugin.ClientPluginOptions)
 		if err != nil {
@@ -114,6 +119,39 @@ func (pxy *BaseProxy) Run() error {
 		pxy.proxyPlugin = p
 	}
 	return nil
+}
+
+func (pxy *BaseProxy) getPluginHostAllowList() []string {
+	dedupHosts := make([]string, 0)
+	addHost := func(host string) {
+		host = strings.TrimSpace(strings.ToLower(host))
+		if host == "" {
+			return
+		}
+		// autocert.HostWhitelist only supports exact host names.
+		if strings.Contains(host, "*") {
+			return
+		}
+		if !slices.Contains(dedupHosts, host) {
+			dedupHosts = append(dedupHosts, host)
+		}
+	}
+
+	switch cfg := pxy.configurer.(type) {
+	case *v1.HTTPProxyConfig:
+		for _, host := range cfg.CustomDomains {
+			addHost(host)
+		}
+	case *v1.HTTPSProxyConfig:
+		for _, host := range cfg.CustomDomains {
+			addHost(host)
+		}
+	case *v1.TCPMuxProxyConfig:
+		for _, host := range cfg.CustomDomains {
+			addHost(host)
+		}
+	}
+	return dedupHosts
 }
 
 func (pxy *BaseProxy) Close() {

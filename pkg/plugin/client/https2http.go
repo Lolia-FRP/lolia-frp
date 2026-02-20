@@ -46,7 +46,7 @@ type HTTPS2HTTPPlugin struct {
 	s *http.Server
 }
 
-func NewHTTPS2HTTPPlugin(_ PluginContext, options v1.ClientPluginOptions) (Plugin, error) {
+func NewHTTPS2HTTPPlugin(pluginCtx PluginContext, options v1.ClientPluginOptions) (Plugin, error) {
 	opts := options.(*v1.HTTPS2HTTPPluginOptions)
 	listener := NewProxyListener()
 
@@ -84,9 +84,18 @@ func NewHTTPS2HTTPPlugin(_ PluginContext, options v1.ClientPluginOptions) (Plugi
 		rp.ServeHTTP(w, r)
 	})
 
-	tlsConfig, err := transport.NewServerTLSConfig(p.opts.CrtPath, p.opts.KeyPath, "")
-	if err != nil {
-		return nil, fmt.Errorf("gen TLS config error: %v", err)
+	var tlsConfig *tls.Config
+	var err error
+	if p.opts.AutoTLS != nil && p.opts.AutoTLS.Enable {
+		tlsConfig, err = buildAutoTLSServerConfigWithHosts(pluginCtx.Name, p.opts.AutoTLS, pluginCtx.HostAllowList)
+		if err != nil {
+			return nil, fmt.Errorf("build autoTLS config error: %v", err)
+		}
+	} else {
+		tlsConfig, err = transport.NewServerTLSConfig(p.opts.CrtPath, p.opts.KeyPath, "")
+		if err != nil {
+			return nil, fmt.Errorf("gen TLS config error: %v", err)
+		}
 	}
 
 	p.s = &http.Server{

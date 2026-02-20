@@ -39,16 +39,25 @@ type TLS2RawPlugin struct {
 	tlsConfig *tls.Config
 }
 
-func NewTLS2RawPlugin(_ PluginContext, options v1.ClientPluginOptions) (Plugin, error) {
+func NewTLS2RawPlugin(pluginCtx PluginContext, options v1.ClientPluginOptions) (Plugin, error) {
 	opts := options.(*v1.TLS2RawPluginOptions)
 
 	p := &TLS2RawPlugin{
 		opts: opts,
 	}
 
-	tlsConfig, err := transport.NewServerTLSConfig(p.opts.CrtPath, p.opts.KeyPath, "")
-	if err != nil {
-		return nil, err
+	var tlsConfig *tls.Config
+	var err error
+	if p.opts.AutoTLS != nil && p.opts.AutoTLS.Enable {
+		tlsConfig, err = buildAutoTLSServerConfigWithHosts(pluginCtx.Name, p.opts.AutoTLS, pluginCtx.HostAllowList)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		tlsConfig, err = transport.NewServerTLSConfig(p.opts.CrtPath, p.opts.KeyPath, "")
+		if err != nil {
+			return nil, err
+		}
 	}
 	p.tlsConfig = tlsConfig
 	return p, nil

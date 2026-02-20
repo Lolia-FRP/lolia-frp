@@ -117,6 +117,18 @@ type HTTPProxyPluginOptions struct {
 
 func (o *HTTPProxyPluginOptions) Complete() {}
 
+type AutoTLSOptions struct {
+	Enable bool `json:"enable,omitempty"`
+	// Contact email for certificate expiration and important notices.
+	Email string `json:"email,omitempty"`
+	// Directory used to cache ACME account and certificates.
+	CacheDir string `json:"cacheDir,omitempty"`
+	// ACME directory URL, e.g. Let's Encrypt staging/prod endpoint.
+	CADirURL string `json:"caDirURL,omitempty"`
+	// Restrict certificate issuance to the listed domains.
+	HostAllowList []string `json:"hostAllowList,omitempty"`
+}
+
 type HTTPS2HTTPPluginOptions struct {
 	Type              string           `json:"type,omitempty"`
 	LocalAddr         string           `json:"localAddr,omitempty"`
@@ -125,6 +137,7 @@ type HTTPS2HTTPPluginOptions struct {
 	EnableHTTP2       *bool            `json:"enableHTTP2,omitempty"`
 	CrtPath           string           `json:"crtPath,omitempty"`
 	KeyPath           string           `json:"keyPath,omitempty"`
+	AutoTLS           *AutoTLSOptions  `json:"autoTLS,omitempty"`
 }
 
 func (o *HTTPS2HTTPPluginOptions) Complete() {
@@ -139,6 +152,7 @@ type HTTPS2HTTPSPluginOptions struct {
 	EnableHTTP2       *bool            `json:"enableHTTP2,omitempty"`
 	CrtPath           string           `json:"crtPath,omitempty"`
 	KeyPath           string           `json:"keyPath,omitempty"`
+	AutoTLS           *AutoTLSOptions  `json:"autoTLS,omitempty"`
 }
 
 func (o *HTTPS2HTTPSPluginOptions) Complete() {
@@ -180,10 +194,11 @@ type UnixDomainSocketPluginOptions struct {
 func (o *UnixDomainSocketPluginOptions) Complete() {}
 
 type TLS2RawPluginOptions struct {
-	Type      string `json:"type,omitempty"`
-	LocalAddr string `json:"localAddr,omitempty"`
-	CrtPath   string `json:"crtPath,omitempty"`
-	KeyPath   string `json:"keyPath,omitempty"`
+	Type      string          `json:"type,omitempty"`
+	LocalAddr string          `json:"localAddr,omitempty"`
+	CrtPath   string          `json:"crtPath,omitempty"`
+	KeyPath   string          `json:"keyPath,omitempty"`
+	AutoTLS   *AutoTLSOptions `json:"autoTLS,omitempty"`
 }
 
 func (o *TLS2RawPluginOptions) Complete() {}
