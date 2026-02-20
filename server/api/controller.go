@@ -38,21 +38,28 @@ type Controller struct {
 	serverCfg      *v1.ServerConfig
 	clientRegistry *registry.ClientRegistry
 	pxyManager     ProxyManager
+	ctlManager     ControlManager
 }
 
 type ProxyManager interface {
 	GetByName(name string) (proxy.Proxy, bool)
 }
 
+type ControlManager interface {
+	CloseAllProxyByName(proxyName string) error
+}
+
 func NewController(
 	serverCfg *v1.ServerConfig,
 	clientRegistry *registry.ClientRegistry,
 	pxyManager ProxyManager,
+	ctlManager ControlManager,
 ) *Controller {
 	return &Controller{
 		serverCfg:      serverCfg,
 		clientRegistry: clientRegistry,
 		pxyManager:     pxyManager,
+		ctlManager:     ctlManager,
 	}
 }
 
@@ -244,6 +251,24 @@ func (c *Controller) APIProxyByName(ctx *httppkg.Context) (any, error) {
 	}
 
 	return proxyInfo, nil
+}
+
+// POST /api/proxy/:name/close
+func (c *Controller) APICloseProxyByName(ctx *httppkg.Context) (any, error) {
+	name := ctx.Param("name")
+	if name == "" {
+		return nil, httppkg.NewError(http.StatusBadRequest, "proxy name required")
+	}
+
+	if c.ctlManager == nil {
+		return nil, fmt.Errorf("control manager unavailable")
+	}
+
+	if err := c.ctlManager.CloseAllProxyByName(name); err != nil {
+		return nil, httppkg.NewError(http.StatusNotFound, err.Error())
+	}
+
+	return httppkg.GeneralResponse{Code: 200, Msg: "ok"}, nil
 }
 
 // DELETE /api/proxies?status=offline
