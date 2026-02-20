@@ -91,15 +91,6 @@ jobs:
             exit 1
           fi
 
-      - name: Save checksums for changelog
-        id: checksums
-        run: |
-          {
-            echo 'content<<EOF'
-            cat release_files/sha256sum.txt
-            echo EOF
-          } >> $GITHUB_OUTPUT
-
       - name: Debug - Check tags and commits
         run: |
           echo "Current tag: ${{ steps.tag.outputs.tag }}"
@@ -117,89 +108,19 @@ jobs:
 
       - name: Build Changelog
         id: changelog
-        uses: mikepenz/release-changelog-builder-action@v4
+        uses: requarks/changelog-action@v1
         with:
-          configurationJson: |
-            {
-              "categories": [
-                {
-                  "title": "## 🚀 Features",
-                  "labels": ["feature", "feat", "enhancement"]
-                },
-                {
-                  "title": "## 🐛 Bug Fixes",
-                  "labels": ["fix", "bug", "bugfix"]
-                },
-                {
-                  "title": "## 📝 Documentation",
-                  "labels": ["docs", "documentation"]
-                },
-                {
-                  "title": "## 🔧 Maintenance",
-                  "labels": ["chore", "refactor", "perf"]
-                },
-                {
-                  "title": "## 📦 Dependencies",
-                  "labels": ["dependencies", "deps"]
-                },
-                {
-                  "title": "## 🔀 Other Changes",
-                  "labels": []
-                }
-              ],
-              "template": "#{{CHANGELOG}}\n\n## 📥 Download\n\n### Checksums (SHA256)\n\n```\n${{ steps.checksums.outputs.content }}\n```\n\n**Full Changelog**: #{{RELEASE_DIFF}}",
-              "pr_template": "- #{{TITLE}} by @#{{AUTHOR}} in ##{{NUMBER}}",
-              "commit_template": "- #{{TITLE}} by @#{{AUTHOR}}",
-              "empty_template": "- No changes in this release",
-              "mode": "COMMIT",
-              "sort": {
-                "order": "ASC",
-                "on_property": "mergedAt"
-              },
-              "max_tags_to_fetch": 200,
-              "max_pull_requests": 200,
-              "max_back_track_time_days": 365,
-              "label_extractor": [
-                {
-                  "pattern": "^(feat|feature)(\\(.+\\))?:",
-                  "target": "feature",
-                  "on_property": "title"
-                },
-                {
-                  "pattern": "^fix(\\(.+\\))?:",
-                  "target": "fix",
-                  "on_property": "title"
-                },
-                {
-                  "pattern": "^docs(\\(.+\\))?:",
-                  "target": "docs",
-                  "on_property": "title"
-                },
-                {
-                  "pattern": "^(chore|refactor|perf)(\\(.+\\))?:",
-                  "target": "chore",
-                  "on_property": "title"
-                },
-                {
-                  "pattern": "^(deps|dependencies)(\\(.+\\))?:",
-                  "target": "dependencies",
-                  "on_property": "title"
-                }
-              ],
-              "ignore_labels": ["ignore", "no-changelog"],
-              "ignore_commits": ["skip-ci", "skip ci", "[skip ci]"]
-            }
-          outputFile: CHANGELOG.md
-          toTag: ${{ steps.tag.outputs.tag }}
-          commitMode: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ steps.tag.outputs.tag }}
+          writeToFile: false
+          includeInvalidCommits: true
+          useGitmojis: false
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ steps.tag.outputs.tag }}
           name: Release ${{ steps.tag.outputs.tag }}
-          body: ${{ steps.changelog.outputs.changelog }}
+          body: ${{ steps.changelog.outputs.changes }}
           draft: false
           prerelease: false
           files: |
