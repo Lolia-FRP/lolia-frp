@@ -26,10 +26,11 @@ import (
 	"sync"
 	"time"
 
-	v1 "github.com/fatedier/frp/pkg/config/v1"
-	"github.com/fatedier/frp/pkg/util/log"
 	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"
+
+	v1 "github.com/fatedier/frp/pkg/config/v1"
+	"github.com/fatedier/frp/pkg/util/log"
 )
 
 func buildAutoTLSServerConfigWithHosts(pluginName string, auto *v1.AutoTLSOptions, fallbackHosts []string) (*tls.Config, error) {
