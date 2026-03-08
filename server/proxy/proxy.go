@@ -263,11 +263,18 @@ func (pxy *BaseProxy) handleUserTCPConnection(userConn net.Conn) {
 
 	name := pxy.GetName()
 	proxyType := cfg.Type
+	local = wrapCountingReadWriteCloser(local, nil, func(bytes int64) {
+		metrics.Server.AddTrafficIn(name, proxyType, bytes)
+	})
+	userConn = netpkg.WrapReadWriteCloserToConn(
+		wrapCountingReadWriteCloser(userConn, nil, func(bytes int64) {
+			metrics.Server.AddTrafficOut(name, proxyType, bytes)
+		}),
+		userConn,
+	)
 	metrics.Server.OpenConnection(name, proxyType)
-	inCount, outCount, _ := libio.Join(local, userConn)
+	_, _, _ = libio.Join(local, userConn)
 	metrics.Server.CloseConnection(name, proxyType)
-	metrics.Server.AddTrafficIn(name, proxyType, inCount)
-	metrics.Server.AddTrafficOut(name, proxyType, outCount)
 	xl.Debugf("join connections closed")
 }
 
