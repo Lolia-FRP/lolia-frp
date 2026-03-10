@@ -26,6 +26,8 @@ func ValidateClientPluginOptions(c v1.ClientPluginOptions) error {
 	switch v := c.(type) {
 	case *v1.HTTP2HTTPSPluginOptions:
 		return validateHTTP2HTTPSPluginOptions(v)
+	case *v1.HTTP2HTTPSRedirectPluginOptions:
+		return validateHTTP2HTTPSRedirectPluginOptions(v)
 	case *v1.HTTPS2HTTPPluginOptions:
 		return validateHTTPS2HTTPPluginOptions(v)
 	case *v1.HTTPS2HTTPSPluginOptions:
@@ -45,6 +47,10 @@ func validateHTTP2HTTPSPluginOptions(c *v1.HTTP2HTTPSPluginOptions) error {
 		return errors.New("localAddr is required")
 	}
 	return nil
+}
+
+func validateHTTP2HTTPSRedirectPluginOptions(c *v1.HTTP2HTTPSRedirectPluginOptions) error {
+	return ValidatePort(c.HTTPSPort, "httpsPort")
 }
 
 func validateHTTPS2HTTPPluginOptions(c *v1.HTTPS2HTTPPluginOptions) error {

@@ -371,6 +371,15 @@ hostHeaderRewrite = "127.0.0.1"
 requestHeaders.set.x-from-where = "frp"
 
 [[proxies]]
+name = "plugin_http2https_redirect"
+type = "http"
+customDomains = ["test.yourdomain.com"]
+[proxies.plugin]
+type = "http2https_redirect"
+# Optional. Defaults to 443. Set this if the HTTPS entry is exposed on a non-standard port.
+# httpsPort = 443
+
+[[proxies]]
 name = "plugin_http2http"
 type = "tcp"
 remotePort = 6007
