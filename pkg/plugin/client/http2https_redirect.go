@@ -23,6 +23,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	v1 "github.com/fatedier/frp/pkg/config/v1"
 	netpkg "github.com/fatedier/frp/pkg/util/net"
@@ -52,6 +53,7 @@ func NewHTTP2HTTPSRedirectPlugin(_ PluginContext, options v1.ClientPluginOptions
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			http.Redirect(w, req, buildHTTPSRedirectURL(req, opts.HTTPSPort), http.StatusFound)
 		}),
+		ReadHeaderTimeout: 60 * time.Second,
 	}
 
 	go func() {
