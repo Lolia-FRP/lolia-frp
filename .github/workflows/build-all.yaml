@@ -19,6 +19,9 @@ jobs:
       matrix:
         goos: [linux, windows, darwin, freebsd, openbsd, android]
         goarch: [amd64, 386, arm, arm64]
+        include:
+          - goos: linux
+            goarch: loong64
         exclude:
           - goos: darwin
             goarch: arm
