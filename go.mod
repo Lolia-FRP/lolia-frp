@@ -11,7 +11,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/mux v1.8.1
 	github.com/gorilla/websocket v1.5.0
-	github.com/hashicorp/yamux v0.1.2
+	github.com/hashicorp/yamux v0.1.1
 	github.com/onsi/ginkgo/v2 v2.23.4
 	github.com/onsi/gomega v1.36.3
 	github.com/pelletier/go-toml/v2 v2.2.0
@@ -95,4 +95,7 @@ require (
 	sigs.k8s.io/yaml v1.3.0 // indirect
 )
 
-replace github.com/fatedier/golib => github.com/Lolia-FRP/golib v0.7.2
+// TODO(fatedier): Temporary use the modified version, update to the official version after merging into the official repository.
+replace github.com/hashicorp/yamux => github.com/fatedier/yamux v0.0.0-20250825093530-d0154be01cd6
+
+replace github.com/fatedier/golib => github.com/Lolia-FRP/golib v0.7.3
