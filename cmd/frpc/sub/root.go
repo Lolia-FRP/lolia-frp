@@ -300,7 +300,13 @@ func runClientWithTokenAndIDs(token string, ids []string, unsafeFeatures *securi
 	// Build URL with query parameters
 	url := fmt.Sprintf("%s/api/v1/tunnel/frpc/config?token=%s&id=%s", apiServer, token, strings.Join(ids, ","))
 	// #nosec G107 -- URL is constructed from trusted source (environment variable or hardcoded)
-	resp, err := http.Get(url)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create API request: %v", err)
+	}
+	// Carry client version in User-Agent so the API knows which frpc version is requesting
+	req.Header.Set("User-Agent", version.Full())
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to fetch config from API: %v", err)
 	}

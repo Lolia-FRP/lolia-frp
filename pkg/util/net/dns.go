@@ -17,9 +17,15 @@ package net
 import (
 	"context"
 	"net"
+	"strings"
 )
 
 func SetDefaultDNSAddress(dnsAddress string) {
+	// DNS-over-HTTPS endpoint, e.g. https://1.1.1.1/dns-query
+	if strings.HasPrefix(dnsAddress, "https://") {
+		SetDefaultDNSOverHTTPS(dnsAddress)
+		return
+	}
 	if _, _, err := net.SplitHostPort(dnsAddress); err != nil {
 		dnsAddress = net.JoinHostPort(dnsAddress, "53")
 	}

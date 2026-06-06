@@ -49,7 +49,8 @@ type ClientCommonConfig struct {
 	// STUN server to help penetrate NAT hole.
 	NatHoleSTUNServer string `json:"natHoleStunServer,omitempty"`
 	// DNSServer specifies a DNS server address for FRPC to use. If this value
-	// is "", the default DNS will be used.
+	// is "", the default DNS will be used. A DNS-over-HTTPS endpoint is also
+	// supported, e.g. "https://1.1.1.1/dns-query".
 	DNSServer string `json:"dnsServer,omitempty"`
 	// LoginFailExit controls whether or not the client should exit after a
 	// failed login attempt. If false, the client will retry until a login
