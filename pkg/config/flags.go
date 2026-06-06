@@ -163,7 +163,7 @@ func RegisterClientCommonConfigFlags(cmd *cobra.Command, c *v1.ClientCommonConfi
 		cmd.PersistentFlags().Int64VarP(&c.Log.MaxDays, "log_max_days", "", 3, "log file reversed days")
 		cmd.PersistentFlags().BoolVarP(&c.Log.DisablePrintColor, "disable_log_color", "", false, "disable log color in console")
 		cmd.PersistentFlags().StringVarP(&c.Transport.TLS.ServerName, "tls_server_name", "", "", "specify the custom server name of tls certificate")
-		cmd.PersistentFlags().StringVarP(&c.DNSServer, "dns_server", "", "", "specify dns server instead of using system default one, support DoH url like https://1.1.1.1/dns-query")
+		cmd.PersistentFlags().StringVarP(&c.DNSServer, "dns_server", "", "", "specify dns server or DoH url (https://1.1.1.1/dns-query) instead of system default")
 		c.Transport.TLS.Enable = cmd.PersistentFlags().BoolP("tls_enable", "", true, "enable frpc tls")
 	}
 	cmd.PersistentFlags().StringVarP(&c.User, "user", "u", "", "user")

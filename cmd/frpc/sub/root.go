@@ -299,7 +299,7 @@ func runClientWithTokenAndIDs(token string, ids []string, unsafeFeatures *securi
 
 	// Build URL with query parameters
 	url := fmt.Sprintf("%s/api/v1/tunnel/frpc/config?token=%s&id=%s", apiServer, token, strings.Join(ids, ","))
-	// #nosec G107 -- URL is constructed from trusted source (environment variable or hardcoded)
+	// URL is constructed from trusted source (environment variable or hardcoded)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create API request: %v", err)
