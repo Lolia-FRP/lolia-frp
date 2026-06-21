@@ -1,6 +1,8 @@
 export PATH := $(PATH):`go env GOPATH`/bin
 export GO111MODULE=on
-LDFLAGS := -s -w
+# -checklinkname=0: required since Go 1.23+ for github.com/wlynxg/anet (pion dep),
+# which uses //go:linkname to reference net.zoneCache on android targets.
+LDFLAGS := -s -w -checklinkname=0
 NOWEB_TAG = $(shell [ ! -d web/frps/dist ] || [ ! -d web/frpc/dist ] && echo ',noweb')
 FRP_COMPAT_BASELINE_COUNT ?= 8
 FRP_COMPAT_FLOOR_VERSION ?= 0.61.0
