@@ -35,7 +35,7 @@ import (
 )
 
 func init() {
-	RegisterProxyFactory(reflect.TypeOf(&v1.UDPProxyConfig{}), NewUDPProxy)
+	RegisterProxyFactory(reflect.TypeFor[*v1.UDPProxyConfig](), NewUDPProxy)
 }
 
 type UDPProxy struct {
@@ -108,7 +108,7 @@ func (pxy *UDPProxy) Run() (remoteAddr string, err error) {
 	pxy.checkCloseCh = make(chan int)
 
 	// read message from workConn, if it returns any error, notify proxy to start a new workConn
-	workConnReaderFn := func(conn net.Conn) {
+	workConnReaderFn := func(payloadConn *msg.Conn) {
 		for {
 			var (
 				rawMsg msg.Message
@@ -116,10 +116,10 @@ func (pxy *UDPProxy) Run() (remoteAddr string, err error) {
 			)
 			xl.Tracef("loop waiting message from udp workConn")
 			// client will send heartbeat in workConn for keeping alive
-			_ = conn.SetReadDeadline(time.Now().Add(time.Duration(60) * time.Second))
-			if rawMsg, errRet = msg.ReadMsg(conn); errRet != nil {
+			_ = payloadConn.SetReadDeadline(time.Now().Add(time.Duration(60) * time.Second))
+			if rawMsg, errRet = payloadConn.ReadMsg(); errRet != nil {
 				xl.Warnf("read from workConn for udp error: %v", errRet)
-				_ = conn.Close()
+				_ = payloadConn.Close()
 				// notify proxy to start a new work connection
 				// ignore error here, it means the proxy is closed
 				_ = errors.PanicToError(func() {
@@ -127,7 +127,7 @@ func (pxy *UDPProxy) Run() (remoteAddr string, err error) {
 				})
 				return
 			}
-			if err := conn.SetReadDeadline(time.Time{}); err != nil {
+			if err := payloadConn.SetReadDeadline(time.Time{}); err != nil {
 				xl.Warnf("set read deadline error: %v", err)
 			}
 			switch m := rawMsg.(type) {
@@ -136,7 +136,7 @@ func (pxy *UDPProxy) Run() (remoteAddr string, err error) {
 				continue
 			case *msg.UDPPacket:
 				if errRet := errors.PanicToError(func() {
-					xl.Tracef("get udp message from workConn: %s", m.Content)
+					xl.Tracef("get udp message from workConn, len: %d", len(m.Content))
 					pxy.readCh <- m
 					metrics.Server.AddTrafficOut(
 						pxy.GetName(),
@@ -144,7 +144,7 @@ func (pxy *UDPProxy) Run() (remoteAddr string, err error) {
 						int64(len(m.Content)),
 					)
 				}); errRet != nil {
-					conn.Close()
+					_ = payloadConn.Close()
 					xl.Infof("reader goroutine for udp work connection closed")
 					return
 				}
@@ -153,7 +153,7 @@ func (pxy *UDPProxy) Run() (remoteAddr string, err error) {
 	}
 
 	// send message to workConn
-	workConnSenderFn := func(conn net.Conn, ctx context.Context) {
+	workConnSenderFn := func(payloadConn *msg.Conn, ctx context.Context) {
 		var errRet error
 		for {
 			select {
@@ -162,12 +162,12 @@ func (pxy *UDPProxy) Run() (remoteAddr string, err error) {
 					xl.Infof("sender goroutine for udp work connection closed")
 					return
 				}
-				if errRet = msg.WriteMsg(conn, udpMsg); errRet != nil {
+				if errRet = payloadConn.WriteMsg(udpMsg); errRet != nil {
 					xl.Infof("sender goroutine for udp work connection closed: %v", errRet)
-					conn.Close()
+					_ = payloadConn.Close()
 					return
 				}
-				xl.Tracef("send message to udp workConn: %s", udpMsg.Content)
+				xl.Tracef("send message to udp workConn, len: %d", len(udpMsg.Content))
 				metrics.Server.AddTrafficIn(
 					pxy.GetName(),
 					pxy.GetConfigurer().GetBaseConfig().Type,
@@ -223,9 +223,11 @@ func (pxy *UDPProxy) Run() (remoteAddr string, err error) {
 			}
 
 			pxy.workConn = netpkg.WrapReadWriteCloserToConn(rwc, workConn)
+			// Plain UDP payload follows the negotiated wire protocol for message framing.
+			payloadConn := msg.NewConn(pxy.workConn, msg.NewReadWriter(pxy.workConn, pxy.wireProtocol))
 			ctx, cancel := context.WithCancel(context.Background())
-			go workConnReaderFn(pxy.workConn)
-			go workConnSenderFn(pxy.workConn, ctx)
+			go workConnReaderFn(payloadConn)
+			go workConnSenderFn(payloadConn, ctx)
 			_, ok := <-pxy.checkCloseCh
 			cancel()
 			if !ok {

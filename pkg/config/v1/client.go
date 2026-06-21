@@ -78,6 +78,9 @@ type ClientCommonConfig struct {
 
 	// Include other config files for proxies.
 	IncludeConfigFiles []string `json:"includes,omitempty"`
+
+	// Store config enables the built-in store source (not configurable via sources list).
+	Store StoreConfig `json:"store,omitempty"`
 }
 
 func (c *ClientCommonConfig) Complete() error {
@@ -102,6 +105,9 @@ type ClientTransportConfig struct {
 	// Valid values are "tcp", "kcp", "quic", "websocket" and "wss". By default, this value
 	// is "tcp".
 	Protocol string `json:"protocol,omitempty"`
+	// WireProtocol specifies the frpc/frps internal wire protocol version.
+	// Valid values are "v1" and "v2". By default, this value is "v1".
+	WireProtocol string `json:"wireProtocol,omitempty"`
 	// The maximum amount of time a dial to server will wait for a connect to complete.
 	DialServerTimeout int64 `json:"dialServerTimeout,omitempty"`
 	// DialServerKeepAlive specifies the interval between keep-alive probes for an active network connection between frpc and frps.
@@ -141,6 +147,7 @@ type ClientTransportConfig struct {
 
 func (c *ClientTransportConfig) Complete() {
 	c.Protocol = util.EmptyOr(c.Protocol, "tcp")
+	c.WireProtocol = util.EmptyOr(c.WireProtocol, "v1")
 	c.DialServerTimeout = util.EmptyOr(c.DialServerTimeout, 10)
 	c.DialServerKeepAlive = util.EmptyOr(c.DialServerKeepAlive, 7200)
 	c.ProxyURL = util.EmptyOr(c.ProxyURL, os.Getenv("http_proxy"))

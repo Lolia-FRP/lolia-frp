@@ -6,6 +6,8 @@ export class Client {
   user: string
   clientID: string
   runID: string
+  version: string
+  wireProtocol: string
   hostname: string
   ip: string
   metas: Map<string, string>
@@ -19,6 +21,8 @@ export class Client {
     this.user = data.user
     this.clientID = data.clientID
     this.runID = data.runID
+    this.version = data.version || ''
+    this.wireProtocol = data.wireProtocol || ''
     this.hostname = data.hostname
     this.ip = data.clientIP || ''
     this.metas = new Map<string, string>()
@@ -44,6 +48,11 @@ export class Client {
 
   get shortRunId(): string {
     return this.runID.substring(0, 8)
+  }
+
+  get wireProtocolLabel(): string {
+    if (!this.wireProtocol) return ''
+    return `Protocol ${this.wireProtocol}`
   }
 
   get firstConnectedAgo(): string {
@@ -78,6 +87,7 @@ export class Client {
       this.user.toLowerCase().includes(search) ||
       this.clientID.toLowerCase().includes(search) ||
       this.runID.toLowerCase().includes(search) ||
+      this.wireProtocol.toLowerCase().includes(search) ||
       this.hostname.toLowerCase().includes(search)
     )
   }

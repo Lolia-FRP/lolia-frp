@@ -1,8 +1,9 @@
 ## Features
 
-* frpc now supports a `clientID` option to uniquely identify client instances. The server dashboard displays all connected clients with their online/offline status, connection history, and metadata, making it easier to monitor and manage multiple frpc deployments.
-* Redesigned the frp web dashboard with a modern UI, dark mode support, and improved navigation.
+* `transport.wireProtocol = "v2"` now also applies to UDP-based proxy payloads, including ordinary UDP and SUDP, so their payload framing is consistent with the selected wire protocol.
+* Improved SUDP compatibility during mixed `transport.wireProtocol` deployments, allowing frps to bridge payloads between v1/default and v2 SUDP clients.
+* XTCP work connection `NatHoleSid` messages now follow the selected `transport.wireProtocol`.
 
-## Fixes
+## Compatibility Notes
 
-* Fixed UDP proxy protocol sending header on every packet instead of only the first packet of each session.
+* When enabling `transport.wireProtocol = "v2"` for SUDP, upgrade both the proxy and visitor frpc instances first, or keep them on `v1` until both sides are upgraded.

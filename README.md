@@ -14,16 +14,6 @@ frp is an open source project with its ongoing development made possible entirel
 <h3 align="center">Gold Sponsors</h3>
 <!--gold sponsors start-->
 <p align="center">
-  <a href="https://requestly.com/?utm_source=github&utm_medium=partnered&utm_campaign=frp" target="_blank">
-    <img width="480px" src="https://github.com/user-attachments/assets/24670320-997d-4d62-9bca-955c59fe883d">
-    <br>
-    <b>Requestly - Free & Open-Source alternative to Postman</b>
-    <br>
-    <sub>All-in-one platform to Test, Mock and Intercept APIs.</sub>
-  </a>
-</p>
-
-<p align="center">
   <a href="https://jb.gg/frp" target="_blank">
     <img width="420px" src="https://raw.githubusercontent.com/fatedier/frp/dev/doc/pic/sponsor_jetbrains.jpg">
 	<br>
@@ -40,6 +30,7 @@ frp is an open source project with its ongoing development made possible entirel
 	<sub>An open source, self-hosted alternative to public clouds, built for data ownership and privacy</sub>
   </a>
 </p>
+
 <div align="center">
 
 ## Recall.ai - API for meeting recordings
@@ -80,6 +71,7 @@ frp also offers a P2P connect mode.
     * [Split Configures Into Different Files](#split-configures-into-different-files)
     * [Server Dashboard](#server-dashboard)
     * [Client Admin UI](#client-admin-ui)
+        * [Dynamic Proxy Management (Store)](#dynamic-proxy-management-store)
     * [Monitor](#monitor)
         * [Prometheus](#prometheus)
     * [Authenticating the Client](#authenticating-the-client)
@@ -148,7 +140,9 @@ We sincerely appreciate your support for frp.
 
 ## Architecture
 
-![architecture](/doc/pic/architecture.png)
+<p align="center">
+  <img src="/doc/pic/architecture.jpg" alt="architecture" width="760">
+</p>
 
 ## Example Usage
 
@@ -592,7 +586,7 @@ Then visit `https://[serverAddr]:7500` to see the dashboard in secure HTTPS conn
 
 ### Client Admin UI
 
-The Client Admin UI helps you check and manage frpc's configuration.
+The Client Admin UI helps you check and manage frpc's configuration and proxies.
 
 Configure an address for admin UI to enable this feature:
 
@@ -604,6 +598,19 @@ webServer.password = "admin"
 ```
 
 Then visit `http://127.0.0.1:7400` to see admin UI, with username and password both being `admin`.
+
+#### Dynamic Proxy Management (Store)
+
+You can dynamically create, update, and delete proxies and visitors at runtime through the Web UI or API, without restarting frpc.
+
+To enable this feature, configure `store.path` to specify a file for persisting the configurations:
+
+```toml
+[store]
+path = "./db.json"
+```
+
+Proxies and visitors managed through the Store are saved to disk and automatically restored on frpc restart. They work alongside proxies defined in the configuration file — Store entries take precedence when names conflict.
 
 ### Monitor
 
@@ -799,6 +806,14 @@ webServer.port = 7400
 Then run command `frpc reload -c ./frpc.toml` and wait for about 10 seconds to let `frpc` create or update or remove proxies.
 
 **Note that global client parameters won't be modified except 'start'.**
+
+`start` is a global allowlist evaluated after all sources are merged (config file/include/store).
+If `start` is non-empty, any proxy or visitor not listed there will not be started, including
+entries created via Store API.
+
+`start` is kept mainly for compatibility and is generally not recommended for new configurations.
+Prefer per-proxy/per-visitor `enabled`, and keep `start` empty unless you explicitly want this
+global allowlist behavior.
 
 You can run command `frpc verify -c ./frpc.toml` before reloading to check if there are config errors.
 

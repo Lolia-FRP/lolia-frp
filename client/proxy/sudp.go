@@ -17,7 +17,6 @@
 package proxy
 
 import (
-	"io"
 	"net"
 	"reflect"
 	"strconv"
@@ -25,17 +24,15 @@ import (
 	"time"
 
 	"github.com/fatedier/golib/errors"
-	libio "github.com/fatedier/golib/io"
 
 	v1 "github.com/fatedier/frp/pkg/config/v1"
 	"github.com/fatedier/frp/pkg/msg"
 	"github.com/fatedier/frp/pkg/proto/udp"
-	"github.com/fatedier/frp/pkg/util/limit"
 	netpkg "github.com/fatedier/frp/pkg/util/net"
 )
 
 func init() {
-	RegisterProxyFactory(reflect.TypeOf(&v1.SUDPProxyConfig{}), NewSUDPProxy)
+	RegisterProxyFactory(reflect.TypeFor[*v1.SUDPProxyConfig](), NewSUDPProxy)
 }
 
 type SUDPProxy struct {
@@ -83,27 +80,14 @@ func (pxy *SUDPProxy) InWorkConn(conn net.Conn, _ *msg.StartWorkConn) {
 	xl := pxy.xl
 	xl.Infof("incoming a new work connection for sudp proxy, %s", conn.RemoteAddr().String())
 
-	var rwc io.ReadWriteCloser = conn
-	var err error
-	if pxy.limiter != nil {
-		rwc = libio.WrapReadWriteCloser(limit.NewReader(conn, pxy.limiter), limit.NewWriter(conn, pxy.limiter), func() error {
-			return conn.Close()
-		})
+	remote, _, err := pxy.wrapWorkConn(conn, pxy.encryptionKey)
+	if err != nil {
+		xl.Errorf("wrap work connection: %v", err)
+		return
 	}
-	if pxy.cfg.Transport.UseEncryption {
-		rwc, err = libio.WithEncryption(rwc, pxy.encryptionKey)
-		if err != nil {
-			conn.Close()
-			xl.Errorf("create encryption stream error: %v", err)
-			return
-		}
-	}
-	if pxy.cfg.Transport.UseCompression {
-		rwc = libio.WithCompression(rwc)
-	}
-	conn = netpkg.WrapReadWriteCloserToConn(rwc, conn)
 
-	workConn := conn
+	workConn := netpkg.WrapReadWriteCloserToConn(remote, conn)
+	payloadConn := msg.NewConn(workConn, msg.NewReadWriter(workConn, pxy.clientCfg.Transport.WireProtocol))
 	readCh := make(chan *msg.UDPPacket, 1024)
 	sendCh := make(chan msg.Message, 1024)
 	isClose := false
@@ -126,7 +110,7 @@ func (pxy *SUDPProxy) InWorkConn(conn net.Conn, _ *msg.StartWorkConn) {
 	}
 
 	// udp service <- frpc <- frps <- frpc visitor <- user
-	workConnReaderFn := func(conn net.Conn, readCh chan *msg.UDPPacket) {
+	workConnReaderFn := func(payloadConn *msg.Conn, readCh chan *msg.UDPPacket) {
 		defer closeFn()
 
 		for {
@@ -139,7 +123,7 @@ func (pxy *SUDPProxy) InWorkConn(conn net.Conn, _ *msg.StartWorkConn) {
 			}
 
 			var udpMsg msg.UDPPacket
-			if errRet := msg.ReadMsgInto(conn, &udpMsg); errRet != nil {
+			if errRet := payloadConn.ReadMsgInto(&udpMsg); errRet != nil {
 				xl.Warnf("read from workConn for sudp error: %v", errRet)
 				return
 			}
@@ -154,7 +138,7 @@ func (pxy *SUDPProxy) InWorkConn(conn net.Conn, _ *msg.StartWorkConn) {
 	}
 
 	// udp service -> frpc -> frps -> frpc visitor -> user
-	workConnSenderFn := func(conn net.Conn, sendCh chan msg.Message) {
+	workConnSenderFn := func(payloadConn *msg.Conn, sendCh chan msg.Message) {
 		defer func() {
 			closeFn()
 			xl.Infof("writer goroutine for sudp work connection closed")
@@ -165,12 +149,12 @@ func (pxy *SUDPProxy) InWorkConn(conn net.Conn, _ *msg.StartWorkConn) {
 			switch m := rawMsg.(type) {
 			case *msg.UDPPacket:
 				xl.Tracef("frpc send udp package to frpc visitor, [udp local: %v, remote: %v], [tcp work conn local: %v, remote: %v]",
-					m.LocalAddr.String(), m.RemoteAddr.String(), conn.LocalAddr().String(), conn.RemoteAddr().String())
+					m.LocalAddr.String(), m.RemoteAddr.String(), payloadConn.LocalAddr().String(), payloadConn.RemoteAddr().String())
 			case *msg.Ping:
 				xl.Tracef("frpc send ping message to frpc visitor")
 			}
 
-			if errRet = msg.WriteMsg(conn, rawMsg); errRet != nil {
+			if errRet = payloadConn.WriteMsg(rawMsg); errRet != nil {
 				xl.Errorf("sudp work write error: %v", errRet)
 				return
 			}
@@ -201,8 +185,8 @@ func (pxy *SUDPProxy) InWorkConn(conn net.Conn, _ *msg.StartWorkConn) {
 		}
 	}
 
-	go workConnSenderFn(workConn, sendCh)
-	go workConnReaderFn(workConn, readCh)
+	go workConnSenderFn(payloadConn, sendCh)
+	go workConnReaderFn(payloadConn, readCh)
 	go heartbeatFn(sendCh)
 
 	udp.Forwarder(pxy.localAddr, readCh, sendCh, int(pxy.clientCfg.UDPPacketSize), pxy.cfg.Transport.ProxyProtocolVersion)

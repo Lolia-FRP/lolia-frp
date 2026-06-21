@@ -18,6 +18,8 @@ import (
 	"sync"
 	"time"
 
+	"k8s.io/utils/clock"
+
 	"github.com/fatedier/frp/pkg/util/log"
 	"github.com/fatedier/frp/pkg/util/metric"
 	server "github.com/fatedier/frp/server/metrics"
@@ -37,12 +39,21 @@ func init() {
 }
 
 type serverMetrics struct {
-	info *ServerStatistics
-	mu   sync.Mutex
+	info  *ServerStatistics
+	clock clock.WithTicker
+	mu    sync.Mutex
 }
 
 func newServerMetrics() *serverMetrics {
+	return newServerMetricsWithClock(clock.RealClock{})
+}
+
+func newServerMetricsWithClock(clk clock.WithTicker) *serverMetrics {
+	if clk == nil {
+		clk = clock.RealClock{}
+	}
 	return &serverMetrics{
+		clock: clk,
 		info: &ServerStatistics{
 			TotalTrafficIn:  metric.NewDateCounter(ReserveDays),
 			TotalTrafficOut: metric.NewDateCounter(ReserveDays),
@@ -57,14 +68,23 @@ func newServerMetrics() *serverMetrics {
 }
 
 func (m *serverMetrics) run() {
-	go func() {
-		for {
-			time.Sleep(12 * time.Hour)
-			start := time.Now()
+	go m.runUntil(nil)
+}
+
+func (m *serverMetrics) runUntil(stopCh <-chan struct{}) {
+	ticker := m.clock.NewTicker(12 * time.Hour)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C():
+			start := m.clock.Now()
 			count, total := m.clearUselessInfo(time.Duration(7*24) * time.Hour)
-			log.Debugf("clear useless proxy statistics data count %d/%d, cost %v", count, total, time.Since(start))
+			log.Debugf("clear useless proxy statistics data count %d/%d, cost %v", count, total, m.clock.Since(start))
+		case <-stopCh:
+			return
 		}
-	}()
+	}
 }
 
 func (m *serverMetrics) clearUselessInfo(continuousOfflineDuration time.Duration) (int, int) {
@@ -77,7 +97,7 @@ func (m *serverMetrics) clearUselessInfo(continuousOfflineDuration time.Duration
 	for name, data := range m.info.ProxyStatistics {
 		if !data.LastCloseTime.IsZero() &&
 			data.LastStartTime.Before(data.LastCloseTime) &&
-			time.Since(data.LastCloseTime) > continuousOfflineDuration {
+			m.clock.Since(data.LastCloseTime) > continuousOfflineDuration {
 			delete(m.info.ProxyStatistics, name)
 			count++
 			log.Tracef("clear proxy [%s]'s statistics data, lastCloseTime: [%s]", name, data.LastCloseTime.String())
@@ -121,7 +141,7 @@ func (m *serverMetrics) NewProxy(name string, proxyType string, user string, cli
 	}
 	proxyStats.User = user
 	proxyStats.ClientID = clientID
-	proxyStats.LastStartTime = time.Now()
+	proxyStats.LastStartTime = m.clock.Now()
 }
 
 func (m *serverMetrics) CloseProxy(name string, proxyType string) {
@@ -131,7 +151,7 @@ func (m *serverMetrics) CloseProxy(name string, proxyType string) {
 		counter.Dec(1)
 	}
 	if proxyStats, ok := m.info.ProxyStatistics[name]; ok {
-		proxyStats.LastCloseTime = time.Now()
+		proxyStats.LastCloseTime = m.clock.Now()
 	}
 }
 
@@ -143,7 +163,6 @@ func (m *serverMetrics) OpenConnection(name string, _ string) {
 	proxyStats, ok := m.info.ProxyStatistics[name]
 	if ok {
 		proxyStats.CurConns.Inc(1)
-		m.info.ProxyStatistics[name] = proxyStats
 	}
 }
 
@@ -155,7 +174,6 @@ func (m *serverMetrics) CloseConnection(name string, _ string) {
 	proxyStats, ok := m.info.ProxyStatistics[name]
 	if ok {
 		proxyStats.CurConns.Dec(1)
-		m.info.ProxyStatistics[name] = proxyStats
 	}
 }
 
@@ -168,7 +186,6 @@ func (m *serverMetrics) AddTrafficIn(name string, _ string, trafficBytes int64) 
 	proxyStats, ok := m.info.ProxyStatistics[name]
 	if ok {
 		proxyStats.TrafficIn.Inc(trafficBytes)
-		m.info.ProxyStatistics[name] = proxyStats
 	}
 }
 
@@ -181,7 +198,6 @@ func (m *serverMetrics) AddTrafficOut(name string, _ string, trafficBytes int64)
 	proxyStats, ok := m.info.ProxyStatistics[name]
 	if ok {
 		proxyStats.TrafficOut.Inc(trafficBytes)
-		m.info.ProxyStatistics[name] = proxyStats
 	}
 }
 
@@ -203,6 +219,25 @@ func (m *serverMetrics) GetServer() *ServerStats {
 	return s
 }
 
+func toProxyStats(name string, proxyStats *ProxyStatistics) *ProxyStats {
+	ps := &ProxyStats{
+		Name:            name,
+		Type:            proxyStats.ProxyType,
+		User:            proxyStats.User,
+		ClientID:        proxyStats.ClientID,
+		TodayTrafficIn:  proxyStats.TrafficIn.TodayCount(),
+		TodayTrafficOut: proxyStats.TrafficOut.TodayCount(),
+		CurConns:        int64(proxyStats.CurConns.Count()),
+	}
+	if !proxyStats.LastStartTime.IsZero() {
+		ps.LastStartTime = proxyStats.LastStartTime.Format("01-02 15:04:05")
+	}
+	if !proxyStats.LastCloseTime.IsZero() {
+		ps.LastCloseTime = proxyStats.LastCloseTime.Format("01-02 15:04:05")
+	}
+	return ps
+}
+
 func (m *serverMetrics) GetProxiesByType(proxyType string) []*ProxyStats {
 	res := make([]*ProxyStats, 0)
 	m.mu.Lock()
@@ -213,23 +248,7 @@ func (m *serverMetrics) GetProxiesByType(proxyType string) []*ProxyStats {
 		if !filterAll && proxyStats.ProxyType != proxyType {
 			continue
 		}
-
-		ps := &ProxyStats{
-			Name:            name,
-			Type:            proxyStats.ProxyType,
-			User:            proxyStats.User,
-			ClientID:        proxyStats.ClientID,
-			TodayTrafficIn:  proxyStats.TrafficIn.TodayCount(),
-			TodayTrafficOut: proxyStats.TrafficOut.TodayCount(),
-			CurConns:        int64(proxyStats.CurConns.Count()),
-		}
-		if !proxyStats.LastStartTime.IsZero() {
-			ps.LastStartTime = proxyStats.LastStartTime.Format("01-02 15:04:05")
-		}
-		if !proxyStats.LastCloseTime.IsZero() {
-			ps.LastCloseTime = proxyStats.LastCloseTime.Format("01-02 15:04:05")
-		}
-		res = append(res, ps)
+		res = append(res, toProxyStats(name, proxyStats))
 	}
 	return res
 }
@@ -238,32 +257,14 @@ func (m *serverMetrics) GetProxiesByTypeAndName(proxyType string, proxyName stri
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	filterAll := proxyType == "" || proxyType == "all"
-	for name, proxyStats := range m.info.ProxyStatistics {
-		if !filterAll && proxyStats.ProxyType != proxyType {
-			continue
+	proxyStats, ok := m.info.ProxyStatistics[proxyName]
+	if ok {
+		// filterAll allows the "all proxies" API to look up a proxy by name without
+		// knowing its type (proxyType == "" or "all").
+		filterAll := proxyType == "" || proxyType == "all"
+		if filterAll || proxyStats.ProxyType == proxyType {
+			res = toProxyStats(proxyName, proxyStats)
 		}
-
-		if name != proxyName {
-			continue
-		}
-
-		res = &ProxyStats{
-			Name:            name,
-			Type:            proxyStats.ProxyType,
-			User:            proxyStats.User,
-			ClientID:        proxyStats.ClientID,
-			TodayTrafficIn:  proxyStats.TrafficIn.TodayCount(),
-			TodayTrafficOut: proxyStats.TrafficOut.TodayCount(),
-			CurConns:        int64(proxyStats.CurConns.Count()),
-		}
-		if !proxyStats.LastStartTime.IsZero() {
-			res.LastStartTime = proxyStats.LastStartTime.Format("01-02 15:04:05")
-		}
-		if !proxyStats.LastCloseTime.IsZero() {
-			res.LastCloseTime = proxyStats.LastCloseTime.Format("01-02 15:04:05")
-		}
-		break
 	}
 	return
 }
@@ -274,21 +275,7 @@ func (m *serverMetrics) GetProxyByName(proxyName string) (res *ProxyStats) {
 
 	proxyStats, ok := m.info.ProxyStatistics[proxyName]
 	if ok {
-		res = &ProxyStats{
-			Name:            proxyName,
-			Type:            proxyStats.ProxyType,
-			User:            proxyStats.User,
-			ClientID:        proxyStats.ClientID,
-			TodayTrafficIn:  proxyStats.TrafficIn.TodayCount(),
-			TodayTrafficOut: proxyStats.TrafficOut.TodayCount(),
-			CurConns:        int64(proxyStats.CurConns.Count()),
-		}
-		if !proxyStats.LastStartTime.IsZero() {
-			res.LastStartTime = proxyStats.LastStartTime.Format("01-02 15:04:05")
-		}
-		if !proxyStats.LastCloseTime.IsZero() {
-			res.LastCloseTime = proxyStats.LastCloseTime.Format("01-02 15:04:05")
-		}
+		res = toProxyStats(proxyName, proxyStats)
 	}
 	return
 }

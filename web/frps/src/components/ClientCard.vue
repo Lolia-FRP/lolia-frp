@@ -13,6 +13,12 @@
         <span v-if="client.hostname" class="hostname-badge">{{
           client.hostname
         }}</span>
+        <el-tag v-if="client.version" size="small" type="success"
+          >v{{ client.version }}</el-tag
+        >
+        <el-tag v-if="client.wireProtocolLabel" size="small" type="info">
+          {{ client.wireProtocolLabel }}
+        </el-tag>
       </div>
 
       <div class="card-meta">

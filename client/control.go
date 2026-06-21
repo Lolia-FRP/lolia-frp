@@ -27,8 +27,8 @@ import (
 	"github.com/fatedier/frp/pkg/auth"
 	v1 "github.com/fatedier/frp/pkg/config/v1"
 	"github.com/fatedier/frp/pkg/msg"
+	"github.com/fatedier/frp/pkg/naming"
 	"github.com/fatedier/frp/pkg/transport"
-	netpkg "github.com/fatedier/frp/pkg/util/net"
 	"github.com/fatedier/frp/pkg/util/wait"
 	"github.com/fatedier/frp/pkg/util/xlog"
 	"github.com/fatedier/frp/pkg/vnet"
@@ -42,13 +42,11 @@ type SessionContext struct {
 	// It should be attached to the login message when reconnecting.
 	RunID string
 	// Underlying control connection. Once conn is closed, the msgDispatcher and the entire Control will exit.
-	Conn net.Conn
-	// Indicates whether the connection is encrypted.
-	ConnEncrypted bool
+	Conn *msg.Conn
 	// Auth runtime used for login, heartbeats, and encryption.
 	Auth *auth.ClientAuth
-	// Connector is used to create new connections, which could be real TCP connections or virtual streams.
-	Connector Connector
+	// Connector is used to create message connections to frps.
+	Connector MessageConnector
 	// Virtual net controller
 	VnetController *vnet.Controller
 }
@@ -92,15 +90,7 @@ func NewControl(ctx context.Context, sessionCtx *SessionContext) (*Control, erro
 	}
 	ctl.lastPong.Store(time.Now())
 
-	if sessionCtx.ConnEncrypted {
-		cryptoRW, err := netpkg.NewCryptoReadWriter(sessionCtx.Conn, sessionCtx.Auth.EncryptionKey())
-		if err != nil {
-			return nil, err
-		}
-		ctl.msgDispatcher = msg.NewDispatcher(cryptoRW)
-	} else {
-		ctl.msgDispatcher = msg.NewDispatcher(sessionCtx.Conn)
-	}
+	ctl.msgDispatcher = msg.NewDispatcher(sessionCtx.Conn)
 	ctl.registerMsgHandlers()
 	ctl.msgTransporter = transport.NewMessageTransporter(ctl.msgDispatcher)
 
@@ -140,14 +130,14 @@ func (ctl *Control) handleReqWorkConn(_ msg.Message) {
 		workConn.Close()
 		return
 	}
-	if err = msg.WriteMsg(workConn, m); err != nil {
+	if err = workConn.WriteMsg(m); err != nil {
 		xl.Warnf("work connection write to server error: %v", err)
 		workConn.Close()
 		return
 	}
 
 	var startMsg msg.StartWorkConn
-	if err = msg.ReadMsgInto(workConn, &startMsg); err != nil {
+	if err = workConn.ReadMsgInto(&startMsg); err != nil {
 		xl.Tracef("work connection closed before response StartWorkConn message: %v", err)
 		workConn.Close()
 		return
@@ -158,6 +148,8 @@ func (ctl *Control) handleReqWorkConn(_ msg.Message) {
 		return
 	}
 
+	startMsg.ProxyName = naming.StripUserPrefix(ctl.sessionCtx.Common.User, startMsg.ProxyName)
+
 	// dispatch this work connection to related proxy
 	ctl.pm.HandleWorkConn(startMsg.ProxyName, workConn, &startMsg)
 }
@@ -167,14 +159,15 @@ func (ctl *Control) handleNewProxyResp(m msg.Message) {
 	inMsg := m.(*msg.NewProxyResp)
 	// Server will return NewProxyResp message to each NewProxy message.
 	// Start a new proxy handler if no error got
-	err := ctl.pm.StartProxy(inMsg.ProxyName, inMsg.RemoteAddr, inMsg.Error)
+	proxyName := naming.StripUserPrefix(ctl.sessionCtx.Common.User, inMsg.ProxyName)
+	err := ctl.pm.StartProxy(proxyName, inMsg.RemoteAddr, inMsg.Error)
 	if err != nil {
-		xl.Warnf("[%s] 启动失败: %v", inMsg.ProxyName, err)
+		xl.Warnf("[%s] 启动失败: %v", proxyName, err)
 	} else {
-		xl.Infof("[%s] 成功启动隧道", inMsg.ProxyName)
+		xl.Infof("[%s] 成功启动隧道", proxyName)
 		if inMsg.RemoteAddr != "" {
 			// Get proxy type to format access message
-			if status, ok := ctl.pm.GetProxyStatus(inMsg.ProxyName); ok {
+			if status, ok := ctl.pm.GetProxyStatus(proxyName); ok {
 				proxyType := status.Type
 				remoteAddr := inMsg.RemoteAddr
 				var accessMsg string
@@ -202,9 +195,9 @@ func (ctl *Control) handleNewProxyResp(m msg.Message) {
 					accessMsg = fmt.Sprintf("您可通过 %s 访问您的服务", remoteAddr)
 				}
 
-				xl.Infof("[%s] %s", inMsg.ProxyName, accessMsg)
+				xl.Infof("[%s] %s", proxyName, accessMsg)
 			} else {
-				xl.Infof("[%s] 您可通过 %s 访问您的服务", inMsg.ProxyName, inMsg.RemoteAddr)
+				xl.Infof("[%s] 您可通过 %s 访问您的服务", proxyName, inMsg.RemoteAddr)
 			}
 		}
 	}
@@ -260,7 +253,7 @@ func (ctl *Control) Done() <-chan struct{} {
 }
 
 // connectServer return a new connection to frps
-func (ctl *Control) connectServer() (net.Conn, error) {
+func (ctl *Control) connectServer() (*msg.Conn, error) {
 	return ctl.sessionCtx.Connector.Connect()
 }
 
