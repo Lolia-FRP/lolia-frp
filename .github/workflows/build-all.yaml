@@ -159,11 +159,13 @@ jobs:
           echo "CC=$CC"
           
           # 直接使用 go build 命令，不通过 Makefile，防止 CGO_ENABLED 被覆盖
+          # -checklinkname=0: 关闭 Go 1.23+ 的 linkname 检查，规避 wlynxg/anet
+          # 在 android 下通过 //go:linkname 引用 net.zoneCache 导致的链接失败
           echo "Building frps..."
-          go build -trimpath -ldflags "-s -w" -tags frps -o bin/frps ./cmd/frps
-          
+          go build -trimpath -ldflags "-s -w -checklinkname=0" -tags frps -o bin/frps ./cmd/frps
+
           echo "Building frpc..."
-          go build -trimpath -ldflags "-s -w" -tags frpc -o bin/frpc ./cmd/frpc
+          go build -trimpath -ldflags "-s -w -checklinkname=0" -tags frpc -o bin/frpc ./cmd/frpc
           
           # 验证文件已生成
           ls -lh ./bin/
