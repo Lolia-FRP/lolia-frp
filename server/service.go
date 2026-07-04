@@ -291,8 +291,14 @@ func NewService(cfg *v1.ServerConfig) (*Service, error) {
 
 	// Create http vhost muxer.
 	if cfg.VhostHTTPPort > 0 {
+		var redirector *vhost.HTTPSRedirector
+		if cfg.VhostHTTPSPort > 0 {
+			redirector = vhost.NewHTTPSRedirector(cfg.VhostHTTPSRedirectPort)
+			svr.rc.HTTPSRedirector = redirector
+		}
 		rp := vhost.NewHTTPReverseProxy(vhost.HTTPReverseProxyOptions{
 			ResponseHeaderTimeoutS: cfg.VhostHTTPTimeout,
+			HTTPSRedirector:        redirector,
 		}, svr.httpVhostRouter)
 		svr.rc.HTTPReverseProxy = rp
 

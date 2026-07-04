@@ -39,11 +39,15 @@ var ErrNoRouteFound = errors.New("no route found")
 
 type HTTPReverseProxyOptions struct {
 	ResponseHeaderTimeoutS int64
+	// HTTPSRedirector, if set, redirects requests whose host has no HTTP
+	// route but opted into HTTP to HTTPS redirection.
+	HTTPSRedirector *HTTPSRedirector
 }
 
 type HTTPReverseProxy struct {
-	proxy       http.Handler
-	vhostRouter *Routers
+	proxy           http.Handler
+	vhostRouter     *Routers
+	httpsRedirector *HTTPSRedirector
 
 	responseHeaderTimeout time.Duration
 }
@@ -55,6 +59,7 @@ func NewHTTPReverseProxy(option HTTPReverseProxyOptions, vhostRouter *Routers) *
 	rp := &HTTPReverseProxy{
 		responseHeaderTimeout: time.Duration(option.ResponseHeaderTimeoutS) * time.Second,
 		vhostRouter:           vhostRouter,
+		httpsRedirector:       option.HTTPSRedirector,
 	}
 	proxy := &httputil.ReverseProxy{
 		// Modify incoming requests by route policies.
@@ -278,6 +283,12 @@ func (rp *HTTPReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request)
 			rw.Header().Set("WWW-Authenticate", `Basic realm="Restricted"`)
 			http.Error(rw, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
 		}
+		return
+	}
+
+	// Hosts without any real HTTP route may still ask for a redirect to
+	// their HTTPS endpoint; registered HTTP routes always take precedence.
+	if rc == nil && rp.httpsRedirector != nil && rp.httpsRedirector.Redirect(rw, newreq) {
 		return
 	}
 

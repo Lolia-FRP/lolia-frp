@@ -50,6 +50,9 @@ type ResourceController struct {
 	// For HTTP proxies, forwarding HTTP requests
 	HTTPReverseProxy *vhost.HTTPReverseProxy
 
+	// Domains of HTTPS proxies that requested automatic HTTP to HTTPS redirection
+	HTTPSRedirector *vhost.HTTPSRedirector
+
 	// For HTTPS proxies, route requests to different clients by hostname and other information
 	VhostHTTPSMuxer *vhost.HTTPSMuxer
 

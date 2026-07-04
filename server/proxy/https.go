@@ -31,6 +31,9 @@ func init() {
 type HTTPSProxy struct {
 	*BaseProxy
 	cfg *v1.HTTPSProxyConfig
+
+	// domains registered for HTTP to HTTPS redirection, removed on Close
+	redirectDomains []string
 }
 
 func NewHTTPSProxy(baseProxy *BaseProxy) Proxy {
@@ -66,12 +69,28 @@ func (pxy *HTTPSProxy) Run() (remoteAddr string, err error) {
 		xl.Infof("https proxy listen for host [%s] group [%s]", domain, pxy.cfg.LoadBalancer.Group)
 	}
 
+	if pxy.cfg.HTTPRedirect {
+		if pxy.rc.HTTPSRedirector != nil {
+			for _, domain := range domains {
+				pxy.rc.HTTPSRedirector.Add(domain)
+			}
+			pxy.redirectDomains = domains
+			xl.Infof("https proxy enabled http redirect for hosts %v", domains)
+		} else {
+			xl.Warnf("httpRedirect is enabled but frps has no vhostHTTPPort or vhostHTTPSPort, ignored")
+		}
+	}
+
 	pxy.startCommonTCPListenersHandler()
 	remoteAddr = strings.Join(addrs, ",")
 	return
 }
 
 func (pxy *HTTPSProxy) Close() {
+	for _, domain := range pxy.redirectDomains {
+		pxy.rc.HTTPSRedirector.Remove(domain)
+	}
+	pxy.redirectDomains = nil
 	pxy.BaseProxy.Close()
 }
 

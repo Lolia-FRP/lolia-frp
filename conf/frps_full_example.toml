@@ -40,6 +40,12 @@ transport.maxPoolCount = 5
 # If negative, keep-alive probes are disabled.
 # transport.tcpKeepalive = 7200
 
+# proxyIdleTimeout specifies the maximum time in seconds that a proxied user connection
+# can stay open without any traffic in either direction before frps closes it.
+# It reclaims connections whose endpoints are still open at the TCP level but will never send data again.
+# By default, this value is 0, which disables the idle timeout.
+# transport.proxyIdleTimeout = 7200
+
 # transport.tls.force specifies whether to only accept TLS-encrypted connections. By default, the value is false.
 transport.tls.force = false
 
@@ -51,6 +57,12 @@ transport.tls.force = false
 # Note: http port and https port can be same with bindPort
 vhostHTTPPort = 80
 vhostHTTPSPort = 443
+
+# Port used in the Location header when redirecting HTTP requests to HTTPS for
+# proxies with httpRedirect enabled. Set it when browsers reach the HTTPS vhost
+# through a port mapping, so it differs from vhostHTTPSPort.
+# By default, this value is vhostHTTPSPort.
+# vhostHTTPSRedirectPort = 443
 
 # Response header timeout(seconds) for vhost http server, default is 60s
 # vhostHTTPTimeout = 60

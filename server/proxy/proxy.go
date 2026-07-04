@@ -317,15 +317,33 @@ func (pxy *BaseProxy) handleUserTCPConnection(userConn net.Conn) {
 
 	name := pxy.GetName()
 	proxyType := cfg.Type
+	var watcher *idleWatcher
+	touch := func() {
+		if watcher != nil {
+			watcher.touch()
+		}
+	}
 	local = wrapCountingReadWriteCloser(local, nil, func(bytes int64) {
+		touch()
 		metrics.Server.AddTrafficIn(name, proxyType, bytes)
 	})
 	userConn = netpkg.WrapReadWriteCloserToConn(
 		wrapCountingReadWriteCloser(userConn, nil, func(bytes int64) {
+			touch()
 			metrics.Server.AddTrafficOut(name, proxyType, bytes)
 		}),
 		userConn,
 	)
+	if idleTimeout := time.Duration(pxy.serverCfg.Transport.ProxyIdleTimeout) * time.Second; idleTimeout > 0 {
+		wrappedLocal, wrappedUserConn := local, userConn
+		watcher = startIdleWatcher(idleTimeout, func() {
+			xl.Infof("close user connection [%s] of proxy [%s]: no traffic in either direction for %s",
+				wrappedUserConn.RemoteAddr().String(), name, idleTimeout)
+			_ = wrappedUserConn.Close()
+			_ = wrappedLocal.Close()
+		})
+		defer watcher.stop()
+	}
 	metrics.Server.OpenConnection(name, proxyType)
 	// Traffic is counted incrementally via the counting wrappers above, so the
 	// byte totals returned by joinUserConnection are intentionally discarded here.

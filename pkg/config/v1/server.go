@@ -51,6 +51,12 @@ type ServerConfig struct {
 	// Vhost requests. If this value is 0, the server will not listen for HTTPS
 	// requests.
 	VhostHTTPSPort int `json:"vhostHTTPSPort,omitempty"`
+	// VhostHTTPSRedirectPort specifies the port used in the Location header
+	// when redirecting HTTP requests to HTTPS for proxies with httpRedirect
+	// enabled. Set it when browsers reach the HTTPS vhost through a port
+	// mapping, so it differs from VhostHTTPSPort. By default, this value is
+	// VhostHTTPSPort.
+	VhostHTTPSRedirectPort int `json:"vhostHTTPSRedirectPort,omitempty"`
 	// TCPMuxHTTPConnectPort specifies the port that the server listens for TCP
 	// HTTP CONNECT requests. If the value is 0, the server will not multiplex TCP
 	// requests on one single port. If it's not - it will listen on this value for
@@ -118,6 +124,7 @@ func (c *ServerConfig) Complete() error {
 	}
 
 	c.VhostHTTPTimeout = util.EmptyOr(c.VhostHTTPTimeout, 60)
+	c.VhostHTTPSRedirectPort = util.EmptyOr(c.VhostHTTPSRedirectPort, c.VhostHTTPSPort)
 	c.DetailedErrorsToClient = util.EmptyOr(c.DetailedErrorsToClient, lo.ToPtr(true))
 	c.UserConnTimeout = util.EmptyOr(c.UserConnTimeout, 10)
 	c.UDPPacketSize = util.EmptyOr(c.UDPPacketSize, 1500)
@@ -173,6 +180,12 @@ type ServerTransportConfig struct {
 	// before terminating the connection. It is not recommended to change this
 	// value. By default, this value is 90. Set negative value to disable it.
 	HeartbeatTimeout int64 `json:"heartbeatTimeout,omitempty"`
+	// ProxyIdleTimeout specifies the maximum time in seconds that a proxied
+	// user connection can stay open without any traffic in either direction
+	// before frps closes it. This reclaims connections whose endpoints are
+	// still open at the TCP level but will never send data again. By default,
+	// this value is 0, which disables the idle timeout.
+	ProxyIdleTimeout int64 `json:"proxyIdleTimeout,omitempty"`
 	// QUIC options.
 	QUIC QUICOptions `json:"quic,omitempty"`
 	// TLS specifies TLS settings for the connection from the client.

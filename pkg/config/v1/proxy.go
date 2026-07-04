@@ -369,6 +369,12 @@ var _ ProxyConfigurer = &HTTPSProxyConfig{}
 type HTTPSProxyConfig struct {
 	ProxyBaseConfig
 	DomainConfig
+
+	// HTTPRedirect requests frps to redirect plain HTTP requests for the
+	// proxy's domains to their HTTPS endpoint. It only takes effect when
+	// frps has vhostHTTPPort enabled, and never overrides a real HTTP
+	// proxy registered on the same domain.
+	HTTPRedirect bool `json:"httpRedirect,omitempty"`
 }
 
 func (c *HTTPSProxyConfig) MarshalToMsg(m *msg.NewProxy) {
@@ -376,6 +382,7 @@ func (c *HTTPSProxyConfig) MarshalToMsg(m *msg.NewProxy) {
 
 	m.CustomDomains = c.CustomDomains
 	m.SubDomain = c.SubDomain
+	m.HTTPRedirect = c.HTTPRedirect
 }
 
 func (c *HTTPSProxyConfig) UnmarshalFromMsg(m *msg.NewProxy) {
@@ -383,6 +390,7 @@ func (c *HTTPSProxyConfig) UnmarshalFromMsg(m *msg.NewProxy) {
 
 	c.CustomDomains = m.CustomDomains
 	c.SubDomain = m.SubDomain
+	c.HTTPRedirect = m.HTTPRedirect
 }
 
 func (c *HTTPSProxyConfig) Clone() ProxyConfigurer {
