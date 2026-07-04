@@ -164,9 +164,8 @@ func (w *RotateFileWriter) cleanupOldLogs(now time.Time) {
 		}
 
 		name := f.Name()
-		if strings.HasPrefix(name, base+".") {
-			// Extract date from filename (base.YYYY-MM-DD)
-			dateStr := strings.TrimPrefix(name, base+".")
+		// Extract date from filename (base.YYYY-MM-DD)
+		if dateStr, ok := strings.CutPrefix(name, base+"."); ok {
 			if len(dateStr) == 10 {
 				fileDate, err := time.Parse("2006-01-02", dateStr)
 				if err == nil && fileDate.Before(cutoffDate) {

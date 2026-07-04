@@ -70,7 +70,7 @@ func (w *logCapture) String() string {
 // levels parses the captured JSON log output and returns the level of each entry.
 func (w *logCapture) levels() []charmlog.Level {
 	var levels []charmlog.Level
-	for _, line := range strings.Split(strings.TrimSpace(w.String()), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(w.String()), "\n") {
 		if line == "" {
 			continue
 		}

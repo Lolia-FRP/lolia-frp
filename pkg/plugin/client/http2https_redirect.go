@@ -51,7 +51,9 @@ func NewHTTP2HTTPSRedirectPlugin(_ PluginContext, options v1.ClientPluginOptions
 
 	p.s = &http.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-			http.Redirect(w, req, buildHTTPSRedirectURL(req, opts.HTTPSPort), http.StatusFound)
+			// Not an open redirect: the target scheme is fixed to https and the
+			// host is the one the client already connected to.
+			http.Redirect(w, req, buildHTTPSRedirectURL(req, opts.HTTPSPort), http.StatusFound) //nolint:gosec // G710
 		}),
 		ReadHeaderTimeout: 60 * time.Second,
 	}

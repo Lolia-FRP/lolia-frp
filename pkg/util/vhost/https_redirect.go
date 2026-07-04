@@ -15,7 +15,9 @@
 package vhost
 
 import (
+	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"sync"
 
@@ -73,11 +75,19 @@ func (r *HTTPSRedirector) Redirect(rw http.ResponseWriter, req *http.Request) bo
 		return false
 	}
 
-	target := "https://" + host
-	if r.port != 443 {
-		target += ":" + strconv.Itoa(r.port)
+	target := url.URL{
+		Scheme:   "https",
+		Host:     host,
+		Path:     req.URL.Path,
+		RawPath:  req.URL.RawPath,
+		RawQuery: req.URL.RawQuery,
 	}
-	target += req.URL.RequestURI()
-	http.Redirect(rw, req, target, http.StatusMovedPermanently)
+	if r.port != 443 {
+		target.Host = net.JoinHostPort(host, strconv.Itoa(r.port))
+	}
+	// Not an open redirect: the host is validated against the registered
+	// domain set above, the scheme is fixed, and only the same-host path and
+	// query are echoed back.
+	http.Redirect(rw, req, target.String(), http.StatusMovedPermanently) //nolint:gosec // G710
 	return true
 }
