@@ -97,3 +97,6 @@ require (
 
 // TODO(fatedier): Temporary use the modified version, update to the official version after merging into the official repository.
 replace github.com/hashicorp/yamux => github.com/fatedier/yamux v0.0.0-20250825093530-d0154be01cd6
+
+// Use the Lolia-FRP fork of golib: io.Join relays with adaptively sized buffers.
+replace github.com/fatedier/golib => github.com/Lolia-FRP/golib v0.0.0-20260704205217-7f676961e707
