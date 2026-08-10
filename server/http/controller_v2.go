@@ -17,22 +17,31 @@ package http
 import (
 	"cmp"
 	"fmt"
+	"maps"
 	"math"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	v1 "github.com/fatedier/frp/pkg/config/v1"
 	"github.com/fatedier/frp/pkg/metrics/mem"
 	httppkg "github.com/fatedier/frp/pkg/util/http"
 	"github.com/fatedier/frp/server/http/model"
+	"github.com/fatedier/frp/server/registry"
 )
 
 const (
 	defaultV2Page     = 1
 	defaultV2PageSize = 50
 	maxV2PageSize     = 200
+
+	v2SystemPruneTypeOfflineProxies = "offline_proxies"
+	v2ProxyTrafficDefaultDays       = 7
+	v2ProxyTrafficUnit              = "bytes"
+	v2ProxyTrafficGranularity       = "day"
 )
 
 var apiV2ProxyTypes = []string{
@@ -44,6 +53,55 @@ var apiV2ProxyTypes = []string{
 	string(v1.ProxyTypeSTCP),
 	string(v1.ProxyTypeXTCP),
 	string(v1.ProxyTypeSUDP),
+}
+
+// /api/v2/system/info
+func (c *Controller) APIV2SystemInfo(ctx *httppkg.Context) (any, error) {
+	info := c.buildServerInfoResp()
+	proxyTypeCounts := info.ProxyTypeCounts
+	if proxyTypeCounts == nil {
+		proxyTypeCounts = map[string]int64{}
+	}
+
+	return model.V2SystemInfoResp{
+		Version: info.Version,
+		Config: model.V2SystemInfoConfigResp{
+			BindPort:              info.BindPort,
+			VhostHTTPPort:         info.VhostHTTPPort,
+			VhostHTTPSPort:        info.VhostHTTPSPort,
+			TCPMuxHTTPConnectPort: info.TCPMuxHTTPConnectPort,
+			KCPBindPort:           info.KCPBindPort,
+			QUICBindPort:          info.QUICBindPort,
+			SubdomainHost:         info.SubdomainHost,
+			MaxPoolCount:          info.MaxPoolCount,
+			MaxPortsPerClient:     info.MaxPortsPerClient,
+			HeartbeatTimeout:      info.HeartBeatTimeout,
+			AllowPortsStr:         info.AllowPortsStr,
+			TLSForce:              info.TLSForce,
+		},
+		Status: model.V2SystemInfoStatusResp{
+			TotalTrafficIn:  info.TotalTrafficIn,
+			TotalTrafficOut: info.TotalTrafficOut,
+			CurConns:        info.CurConns,
+			ClientCounts:    info.ClientCounts,
+			ProxyTypeCounts: proxyTypeCounts,
+		},
+	}, nil
+}
+
+// /api/v2/system/prune
+func (c *Controller) APIV2SystemPrune(ctx *httppkg.Context) (any, error) {
+	pruneType, err := parseV2SystemPruneType(ctx.Query("type"))
+	if err != nil {
+		return nil, err
+	}
+
+	cleared, total := mem.StatsCollector.PruneOfflineProxies()
+	return model.V2SystemPruneResp{
+		Type:    pruneType,
+		Cleared: cleared,
+		Total:   total,
+	}, nil
 }
 
 // /api/v2/users
@@ -137,7 +195,26 @@ func (c *Controller) APIV2ClientList(ctx *httppkg.Context) (any, error) {
 
 // /api/v2/clients/{key}
 func (c *Controller) APIV2ClientDetail(ctx *httppkg.Context) (any, error) {
-	return c.APIClientDetail(ctx)
+	key, err := decodeV2PathParam(ctx, "key", "client key")
+	if err != nil {
+		return nil, err
+	}
+
+	if c.clientRegistry == nil {
+		return nil, fmt.Errorf("client registry unavailable")
+	}
+
+	info, ok := c.clientRegistry.GetByKey(key)
+	if !ok {
+		return nil, httppkg.NewError(http.StatusNotFound, fmt.Sprintf("client %s not found", key))
+	}
+
+	resp := buildClientInfoResp(info)
+	status := c.buildV2ClientStatus(info)
+	return model.V2ClientDetailResp{
+		ClientInfoResp: resp,
+		Status:         status,
+	}, nil
 }
 
 // /api/v2/proxies
@@ -179,7 +256,7 @@ func (c *Controller) APIV2ProxyList(ctx *httppkg.Context) (any, error) {
 	}
 
 	slices.SortFunc(items, func(a, b model.V2ProxyResp) int {
-		if v := cmp.Compare(a.Type, b.Type); v != 0 {
+		if v := cmp.Compare(a.Spec.Type, b.Spec.Type); v != 0 {
 			return v
 		}
 		return cmp.Compare(a.Name, b.Name)
@@ -190,9 +267,9 @@ func (c *Controller) APIV2ProxyList(ctx *httppkg.Context) (any, error) {
 
 // /api/v2/proxies/{name}
 func (c *Controller) APIV2ProxyDetail(ctx *httppkg.Context) (any, error) {
-	name := ctx.Param("name")
-	if name == "" {
-		return nil, fmt.Errorf("missing proxy name")
+	name, err := decodeV2PathParam(ctx, "name", "proxy name")
+	if err != nil {
+		return nil, err
 	}
 
 	ps := mem.StatsCollector.GetProxyByName(name)
@@ -200,6 +277,33 @@ func (c *Controller) APIV2ProxyDetail(ctx *httppkg.Context) (any, error) {
 		return nil, httppkg.NewError(http.StatusNotFound, "no proxy info found")
 	}
 	return c.buildV2ProxyResp(ps), nil
+}
+
+// /api/v2/proxies/{name}/traffic
+func (c *Controller) APIV2ProxyTraffic(ctx *httppkg.Context) (any, error) {
+	name, err := decodeV2PathParam(ctx, "name", "proxy name")
+	if err != nil {
+		return nil, err
+	}
+
+	proxyTrafficInfo := mem.StatsCollector.GetProxyTraffic(name)
+	if proxyTrafficInfo == nil {
+		return nil, httppkg.NewError(http.StatusNotFound, "no proxy info found")
+	}
+
+	return buildV2ProxyTrafficResp(name, proxyTrafficInfo, time.Now()), nil
+}
+
+func decodeV2PathParam(ctx *httppkg.Context, key string, label string) (string, error) {
+	raw := ctx.Param(key)
+	if raw == "" {
+		return "", fmt.Errorf("missing %s", label)
+	}
+	decoded, err := url.PathUnescape(raw)
+	if err != nil {
+		return "", httppkg.NewError(http.StatusBadRequest, fmt.Sprintf("invalid %s", label))
+	}
+	return decoded, nil
 }
 
 func getOrCreateV2User(items map[string]*model.V2UserResp, user string) *model.V2UserResp {
@@ -261,6 +365,18 @@ func parseV2ProxyTypeFilter(raw string) (string, error) {
 	return "", httppkg.NewError(http.StatusBadRequest, "type must be one of tcp, udp, http, https, tcpmux, stcp, xtcp, sudp")
 }
 
+func parseV2SystemPruneType(raw string) (string, error) {
+	pruneType := strings.ToLower(raw)
+	switch pruneType {
+	case "":
+		return "", httppkg.NewError(http.StatusBadRequest, "type is required")
+	case v2SystemPruneTypeOfflineProxies:
+		return pruneType, nil
+	default:
+		return "", httppkg.NewError(http.StatusBadRequest, "type must be one of offline_proxies")
+	}
+}
+
 func matchV2StatusFilter(online bool, filter string) bool {
 	switch filter {
 	case "", "all":
@@ -320,26 +436,36 @@ func matchV2ClientQuery(item model.ClientInfoResp, q string) bool {
 func matchV2ProxyQuery(item model.V2ProxyResp, q string) bool {
 	values := []string{
 		item.Name,
-		item.Type,
+		item.Spec.Type,
 		item.User,
 		item.ClientID,
 		item.Status.State,
 	}
 
-	switch spec := item.Spec.(type) {
-	case *model.TCPOutConf:
-		values = append(values, strconv.Itoa(spec.RemotePort))
-	case *model.UDPOutConf:
-		values = append(values, strconv.Itoa(spec.RemotePort))
-	case *model.HTTPOutConf:
-		values = append(values, spec.CustomDomains...)
-		values = append(values, spec.SubDomain)
-	case *model.HTTPSOutConf:
-		values = append(values, spec.CustomDomains...)
-		values = append(values, spec.SubDomain)
-	case *model.TCPMuxOutConf:
-		values = append(values, spec.CustomDomains...)
-		values = append(values, spec.SubDomain)
+	switch item.Spec.Type {
+	case string(v1.ProxyTypeTCP):
+		if item.Spec.TCP != nil && item.Spec.TCP.RemotePort != nil {
+			values = append(values, strconv.Itoa(*item.Spec.TCP.RemotePort))
+		}
+	case string(v1.ProxyTypeUDP):
+		if item.Spec.UDP != nil && item.Spec.UDP.RemotePort != nil {
+			values = append(values, strconv.Itoa(*item.Spec.UDP.RemotePort))
+		}
+	case string(v1.ProxyTypeHTTP):
+		if item.Spec.HTTP != nil {
+			values = append(values, item.Spec.HTTP.CustomDomains...)
+			values = append(values, item.Spec.HTTP.Subdomain)
+		}
+	case string(v1.ProxyTypeHTTPS):
+		if item.Spec.HTTPS != nil {
+			values = append(values, item.Spec.HTTPS.CustomDomains...)
+			values = append(values, item.Spec.HTTPS.Subdomain)
+		}
+	case string(v1.ProxyTypeTCPMUX):
+		if item.Spec.TCPMux != nil {
+			values = append(values, item.Spec.TCPMux.CustomDomains...)
+			values = append(values, item.Spec.TCPMux.Subdomain)
+		}
 	}
 
 	return containsV2Query(q, values...)
@@ -366,29 +492,156 @@ func (c *Controller) listV2ProxyStats(proxyType string) []*mem.ProxyStats {
 	return items
 }
 
+func buildV2ProxyTrafficResp(name string, traffic *mem.ProxyTrafficInfo, now time.Time) model.V2ProxyTrafficResp {
+	history := make([]model.V2ProxyTrafficPointResp, 0, v2ProxyTrafficDefaultDays)
+	for age := v2ProxyTrafficDefaultDays - 1; age >= 0; age-- {
+		history = append(history, model.V2ProxyTrafficPointResp{
+			Date:       now.AddDate(0, 0, -age).Format(time.DateOnly),
+			TrafficIn:  v2TrafficValueAt(traffic.TrafficIn, age),
+			TrafficOut: v2TrafficValueAt(traffic.TrafficOut, age),
+		})
+	}
+
+	return model.V2ProxyTrafficResp{
+		Name:        name,
+		Unit:        v2ProxyTrafficUnit,
+		Granularity: v2ProxyTrafficGranularity,
+		History:     history,
+	}
+}
+
+func v2TrafficValueAt(values []int64, todayFirstIndex int) int64 {
+	if todayFirstIndex >= len(values) {
+		return 0
+	}
+	return values[todayFirstIndex]
+}
+
+func (c *Controller) buildV2ClientStatus(info registry.ClientInfo) model.V2ClientStatusResp {
+	status := model.V2ClientStatusResp{State: "offline"}
+	if info.Online {
+		status.State = "online"
+	}
+
+	user := info.User
+	clientID := info.ClientID()
+	for _, ps := range c.listV2ProxyStats("") {
+		if ps.User != user || ps.ClientID != clientID {
+			continue
+		}
+		status.CurConns += ps.CurConns
+		status.ProxyCount++
+	}
+	return status
+}
+
 func (c *Controller) buildV2ProxyResp(ps *mem.ProxyStats) model.V2ProxyResp {
 	state := "offline"
-	var spec any
+	var cfg v1.ProxyConfigurer
 	if c.pxyManager != nil {
 		if pxy, ok := c.pxyManager.GetByName(ps.Name); ok {
 			state = "online"
-			spec = getConfFromConfigurer(pxy.GetConfigurer())
+			cfg = pxy.GetConfigurer()
 		}
 	}
 
 	return model.V2ProxyResp{
 		Name:     ps.Name,
-		Type:     ps.Type,
 		User:     ps.User,
 		ClientID: ps.ClientID,
-		Spec:     spec,
+		Spec:     buildV2ProxySpec(ps.Type, cfg),
 		Status: model.V2ProxyStatusResp{
 			State:           state,
 			TodayTrafficIn:  ps.TodayTrafficIn,
 			TodayTrafficOut: ps.TodayTrafficOut,
 			CurConns:        ps.CurConns,
-			LastStartTime:   ps.LastStartTime,
-			LastCloseTime:   ps.LastCloseTime,
+			LastStartAt:     ps.LastStartAt,
+			LastCloseAt:     ps.LastCloseAt,
+		},
+	}
+}
+
+func buildV2ProxySpec(proxyType string, cfg v1.ProxyConfigurer) model.V2ProxySpec {
+	spec := model.V2ProxySpec{Type: proxyType}
+
+	switch proxyType {
+	case string(v1.ProxyTypeTCP):
+		block := &model.V2TCPProxySpec{}
+		if c, ok := cfg.(*v1.TCPProxyConfig); ok {
+			block.V2ProxyBaseSpec = buildV2ProxyBaseSpec(c.GetBaseConfig())
+			block.RemotePort = &c.RemotePort
+		}
+		spec.TCP = block
+	case string(v1.ProxyTypeUDP):
+		block := &model.V2UDPProxySpec{}
+		if c, ok := cfg.(*v1.UDPProxyConfig); ok {
+			block.V2ProxyBaseSpec = buildV2ProxyBaseSpec(c.GetBaseConfig())
+			block.RemotePort = &c.RemotePort
+		}
+		spec.UDP = block
+	case string(v1.ProxyTypeHTTP):
+		block := &model.V2HTTPProxySpec{}
+		if c, ok := cfg.(*v1.HTTPProxyConfig); ok {
+			block.V2ProxyBaseSpec = buildV2ProxyBaseSpec(c.GetBaseConfig())
+			block.CustomDomains = slices.Clone(c.CustomDomains)
+			block.Subdomain = c.SubDomain
+			block.Locations = slices.Clone(c.Locations)
+			block.HostHeaderRewrite = c.HostHeaderRewrite
+		}
+		spec.HTTP = block
+	case string(v1.ProxyTypeHTTPS):
+		block := &model.V2HTTPSProxySpec{}
+		if c, ok := cfg.(*v1.HTTPSProxyConfig); ok {
+			block.V2ProxyBaseSpec = buildV2ProxyBaseSpec(c.GetBaseConfig())
+			block.CustomDomains = slices.Clone(c.CustomDomains)
+			block.Subdomain = c.SubDomain
+		}
+		spec.HTTPS = block
+	case string(v1.ProxyTypeTCPMUX):
+		block := &model.V2TCPMuxProxySpec{}
+		if c, ok := cfg.(*v1.TCPMuxProxyConfig); ok {
+			block.V2ProxyBaseSpec = buildV2ProxyBaseSpec(c.GetBaseConfig())
+			block.CustomDomains = slices.Clone(c.CustomDomains)
+			block.Subdomain = c.SubDomain
+			block.Multiplexer = c.Multiplexer
+			block.RouteByHTTPUser = c.RouteByHTTPUser
+		}
+		spec.TCPMux = block
+	case string(v1.ProxyTypeSTCP):
+		block := &model.V2STCPProxySpec{}
+		if c, ok := cfg.(*v1.STCPProxyConfig); ok {
+			block.V2ProxyBaseSpec = buildV2ProxyBaseSpec(c.GetBaseConfig())
+		}
+		spec.STCP = block
+	case string(v1.ProxyTypeSUDP):
+		block := &model.V2SUDPProxySpec{}
+		if c, ok := cfg.(*v1.SUDPProxyConfig); ok {
+			block.V2ProxyBaseSpec = buildV2ProxyBaseSpec(c.GetBaseConfig())
+		}
+		spec.SUDP = block
+	case string(v1.ProxyTypeXTCP):
+		block := &model.V2XTCPProxySpec{}
+		if c, ok := cfg.(*v1.XTCPProxyConfig); ok {
+			block.V2ProxyBaseSpec = buildV2ProxyBaseSpec(c.GetBaseConfig())
+		}
+		spec.XTCP = block
+	}
+
+	return spec
+}
+
+func buildV2ProxyBaseSpec(base *v1.ProxyBaseConfig) model.V2ProxyBaseSpec {
+	return model.V2ProxyBaseSpec{
+		Annotations: maps.Clone(base.Annotations),
+		Metadatas:   maps.Clone(base.Metadatas),
+		Transport: &model.V2ProxyTransportSpec{
+			UseEncryption:      base.Transport.UseEncryption,
+			UseCompression:     base.Transport.UseCompression,
+			BandwidthLimit:     base.Transport.BandwidthLimit.String(),
+			BandwidthLimitMode: base.Transport.BandwidthLimitMode,
+		},
+		LoadBalancer: &model.V2ProxyLoadBalancerSpec{
+			Group: base.LoadBalancer.Group,
 		},
 	}
 }
