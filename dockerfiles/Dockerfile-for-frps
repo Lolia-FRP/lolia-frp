@@ -5,7 +5,7 @@ COPY web/frpc/package.json /web/frpc/package.json
 COPY web/shared/ /web/shared/
 COPY web/frps/ /web/frps/
 WORKDIR /web
-RUN npm ci --workspace=frps
+RUN npm ci --workspace=frps --include-workspace-root
 WORKDIR /web/frps
 RUN npm run build
 
