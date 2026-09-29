@@ -1,10 +1,11 @@
 FROM node:22 AS web-builder
 
-COPY web/package.json /web/package.json
+COPY web/package.json web/package-lock.json /web/
+COPY web/frpc/package.json /web/frpc/package.json
 COPY web/shared/ /web/shared/
 COPY web/frps/ /web/frps/
 WORKDIR /web
-RUN npm install
+RUN npm ci --workspace=frps
 WORKDIR /web/frps
 RUN npm run build
 
