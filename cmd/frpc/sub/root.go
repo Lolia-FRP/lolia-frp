@@ -58,7 +58,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&cfgDir, "config_dir", "", "", "config directory, run one frpc service for each file in config directory")
 	rootCmd.PersistentFlags().BoolVarP(&showVersion, "version", "v", false, "version of frpc")
 	rootCmd.PersistentFlags().BoolVarP(&strictConfigMode, "strict_config", "", true, "strict config parsing mode, unknown fields will cause an errors")
-	rootCmd.PersistentFlags().StringSliceVarP(&authTokens, "token", "t", []string{}, "authentication tokens in format 'id:token' (LoliaFRP only)")
+	rootCmd.PersistentFlags().StringArrayVarP(&authTokens, "token", "t", []string{}, "authentication tokens in format 'id[,id2,...]:token' (LoliaFRP only)")
 	rootCmd.PersistentFlags().StringSliceVarP(&allowUnsafe, "allow-unsafe", "", []string{},
 		fmt.Sprintf("allowed unsafe features, one or more of: %s", strings.Join(security.ClientUnsafeFeatures, ", ")))
 }
@@ -280,9 +280,9 @@ type APIResponse struct {
 	} `json:"data"`
 }
 
-// TokenInfo stores parsed id and token from the -t parameter
+// TokenInfo stores parsed ids and token from the -t parameter
 type TokenInfo struct {
-	ID    string
+	IDs   []string
 	Token string
 }
 
@@ -292,10 +292,19 @@ func runClientWithTokens(tokens []string, unsafeFeatures *security.UnsafeFeature
 	for _, t := range tokens {
 		parts := strings.SplitN(t, ":", 2)
 		if len(parts) != 2 {
-			return fmt.Errorf("invalid token format '%s', expected 'id:token'", t)
+			return fmt.Errorf("invalid token format '%s', expected 'id[,id2,...]:token'", t)
+		}
+		var ids []string
+		for _, id := range strings.Split(parts[0], ",") {
+			if id = strings.TrimSpace(id); id != "" {
+				ids = append(ids, id)
+			}
+		}
+		if len(ids) == 0 {
+			return fmt.Errorf("invalid token format '%s', id list is empty", t)
 		}
 		tokenInfos = append(tokenInfos, TokenInfo{
-			ID:    strings.TrimSpace(parts[0]),
+			IDs:   ids,
 			Token: strings.TrimSpace(parts[1]),
 		})
 	}
@@ -303,7 +312,7 @@ func runClientWithTokens(tokens []string, unsafeFeatures *security.UnsafeFeature
 	// Group tokens by token value (same token can have multiple IDs)
 	tokenToIDs := make(map[string][]string)
 	for _, ti := range tokenInfos {
-		tokenToIDs[ti.Token] = append(tokenToIDs[ti.Token], ti.ID)
+		tokenToIDs[ti.Token] = append(tokenToIDs[ti.Token], ti.IDs...)
 	}
 
 	// If we have multiple different tokens, start one service for each token group
