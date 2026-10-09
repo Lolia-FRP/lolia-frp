@@ -24,6 +24,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"syscall"
@@ -58,7 +59,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&cfgDir, "config_dir", "", "", "config directory, run one frpc service for each file in config directory")
 	rootCmd.PersistentFlags().BoolVarP(&showVersion, "version", "v", false, "version of frpc")
 	rootCmd.PersistentFlags().BoolVarP(&strictConfigMode, "strict_config", "", true, "strict config parsing mode, unknown fields will cause an errors")
-	rootCmd.PersistentFlags().StringSliceVarP(&authTokens, "token", "t", []string{}, "authentication tokens in format 'id:token' (LoliaFRP only)")
+	rootCmd.PersistentFlags().StringArrayVarP(&authTokens, "token", "t", []string{}, "authentication tokens in format 'id[,id2,...]:token' (LoliaFRP only)")
 	rootCmd.PersistentFlags().StringSliceVarP(&allowUnsafe, "allow-unsafe", "", []string{},
 		fmt.Sprintf("allowed unsafe features, one or more of: %s", strings.Join(security.ClientUnsafeFeatures, ", ")))
 }
@@ -280,22 +281,97 @@ type APIResponse struct {
 	} `json:"data"`
 }
 
-// TokenInfo stores parsed id and token from the -t parameter
+// TokenInfo stores parsed ids and token from the -t parameter
 type TokenInfo struct {
-	ID    string
+	IDs   []string
 	Token string
 }
 
 func runClientWithTokens(tokens []string, unsafeFeatures *security.UnsafeFeatures) error {
+	// Compatible with the following parameter inputs:
+	// -t 10000:chinatelecom -t 10085:chinamobile
+	// -t 10000:chinatelecom,10085:chinamobile
+	// -t 10000,10001:chinatelecom
+	// -t 10000:chinatelecom,10085,10086:chinamobile
+	// ids belong to the next token if they appear between two token markers,
+	// e.g. "10000:chinatelecom,10085,10086:chinamobile" means
+	// 10000 belongs to chinatelecom and 28025,24470 belongs to chinamobile
+	idTokenSplit := regexp.MustCompile(`(?:^|,)(\s*[0-9]+\s*:)`)
+	expanded := make([]string, 0, len(tokens))
+	for _, t := range tokens {
+		if !strings.Contains(t, ":") {
+			expanded = append(expanded, t)
+			continue
+		}
+		matches := idTokenSplit.FindAllStringSubmatchIndex(t, -1)
+		if len(matches) == 0 {
+			expanded = append(expanded, t)
+			continue
+		}
+		// leftover[i] is bare ids accumulated from the previous iteration
+		// that should be prepended to segment i's id list. Also covers bare
+		// ids that appear at the start of the string.
+		leftover := make([]string, len(matches)+1)
+		if matches[0][0] > 0 {
+			head := strings.TrimRight(strings.TrimSpace(t[:matches[0][0]]), ",")
+			leftover[0] = strings.TrimSpace(head)
+		}
+		for i := range matches {
+			capStart, capEnd := matches[i][2], matches[i][3]
+			colonPos := capEnd - 1
+			thisId := strings.TrimSpace(t[capStart:colonPos])
+
+			tokenStart := colonPos + 1
+			var tokenEnd int
+			if i+1 < len(matches) {
+				tokenEnd = matches[i+1][0]
+			} else {
+				tokenEnd = len(t)
+			}
+			tokenStr := strings.TrimSpace(t[tokenStart:tokenEnd])
+			if idx := strings.Index(tokenStr, ","); idx >= 0 {
+				leftover[i+1] = tokenStr[idx+1:]
+				tokenStr = tokenStr[:idx]
+			}
+
+			parts := []string{}
+			if prev := leftover[i]; prev != "" {
+				parts = append(parts, prev)
+			}
+			if thisId != "" {
+				parts = append(parts, thisId)
+			}
+			expanded = append(expanded, strings.TrimSpace(strings.Join(parts, ",")+":"+tokenStr))
+		}
+		// Trailing bare ids after the last token belong to the last
+		// token's id list.
+		if last := leftover[len(matches)]; last != "" && len(expanded) > 0 {
+			lastSeg := expanded[len(expanded)-1]
+			if idx := strings.Index(lastSeg, ":"); idx >= 0 {
+				expanded[len(expanded)-1] = lastSeg[:idx] + "," + last + lastSeg[idx:]
+			}
+		}
+	}
+	tokens = expanded
+
 	// Parse all tokens (format: id:token)
 	tokenInfos := make([]TokenInfo, 0, len(tokens))
 	for _, t := range tokens {
 		parts := strings.SplitN(t, ":", 2)
 		if len(parts) != 2 {
-			return fmt.Errorf("invalid token format '%s', expected 'id:token'", t)
+			return fmt.Errorf("invalid token format '%s', expected 'id[,id2,...]:token'", t)
+		}
+		var ids []string
+		for _, id := range strings.Split(parts[0], ",") {
+			if id = strings.TrimSpace(id); id != "" {
+				ids = append(ids, id)
+			}
+		}
+		if len(ids) == 0 {
+			return fmt.Errorf("invalid token format '%s', id list is empty", t)
 		}
 		tokenInfos = append(tokenInfos, TokenInfo{
-			ID:    strings.TrimSpace(parts[0]),
+			IDs:   ids,
 			Token: strings.TrimSpace(parts[1]),
 		})
 	}
@@ -303,7 +379,7 @@ func runClientWithTokens(tokens []string, unsafeFeatures *security.UnsafeFeature
 	// Group tokens by token value (same token can have multiple IDs)
 	tokenToIDs := make(map[string][]string)
 	for _, ti := range tokenInfos {
-		tokenToIDs[ti.Token] = append(tokenToIDs[ti.Token], ti.ID)
+		tokenToIDs[ti.Token] = append(tokenToIDs[ti.Token], ti.IDs...)
 	}
 
 	// If we have multiple different tokens, start one service for each token group
