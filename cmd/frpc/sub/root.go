@@ -319,7 +319,7 @@ func runClientWithTokens(tokens []string, unsafeFeatures *security.UnsafeFeature
 		for i := range matches {
 			capStart, capEnd := matches[i][2], matches[i][3]
 			colonPos := capEnd - 1
-			thisId := strings.TrimSpace(t[capStart:colonPos])
+			thisID := strings.TrimSpace(t[capStart:colonPos])
 
 			tokenStart := colonPos + 1
 			var tokenEnd int
@@ -338,8 +338,8 @@ func runClientWithTokens(tokens []string, unsafeFeatures *security.UnsafeFeature
 			if prev := leftover[i]; prev != "" {
 				parts = append(parts, prev)
 			}
-			if thisId != "" {
-				parts = append(parts, thisId)
+			if thisID != "" {
+				parts = append(parts, thisID)
 			}
 			expanded = append(expanded, strings.TrimSpace(strings.Join(parts, ",")+":"+tokenStr))
 		}
@@ -362,7 +362,7 @@ func runClientWithTokens(tokens []string, unsafeFeatures *security.UnsafeFeature
 			return fmt.Errorf("invalid token format '%s', expected 'id[,id2,...]:token'", t)
 		}
 		var ids []string
-		for _, id := range strings.Split(parts[0], ",") {
+		for id := range strings.SplitSeq(parts[0], ",") {
 			if id = strings.TrimSpace(id); id != "" {
 				ids = append(ids, id)
 			}
