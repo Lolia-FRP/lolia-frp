@@ -17,6 +17,7 @@ package xlog
 import (
 	"cmp"
 	"slices"
+	"strings"
 
 	"github.com/fatedier/frp/pkg/util/log"
 )
@@ -34,6 +35,8 @@ type LogPrefix struct {
 type Logger struct {
 	prefixes []LogPrefix
 
+	// prefixString is prepended to format strings, so any '%' in prefix
+	// values is escaped to keep them from being interpreted as verbs.
 	prefixString string
 }
 
@@ -84,7 +87,7 @@ func (l *Logger) renderPrefixString() {
 	})
 	l.prefixString = ""
 	for _, v := range l.prefixes {
-		l.prefixString += "[" + v.Value + "] "
+		l.prefixString += "[" + strings.ReplaceAll(v.Value, "%", "%%") + "] "
 	}
 }
 

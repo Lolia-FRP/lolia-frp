@@ -25,16 +25,18 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/fatedier/golib/crypto"
 	"github.com/fatedier/golib/net/mux"
-	fmux "github.com/hashicorp/yamux"
+	fmux "github.com/fatedier/yamux"
 	quic "github.com/quic-go/quic-go"
 	"github.com/samber/lo"
 
 	"github.com/fatedier/frp/pkg/auth"
 	v1 "github.com/fatedier/frp/pkg/config/v1"
+	"github.com/fatedier/frp/pkg/config/v1/validation"
 	modelmetrics "github.com/fatedier/frp/pkg/metrics"
 	"github.com/fatedier/frp/pkg/msg"
 	"github.com/fatedier/frp/pkg/nathole"
@@ -119,6 +121,9 @@ type Service struct {
 
 	// web server for dashboard UI and apis
 	webServer *httppkg.Server
+	// HTTP vhost resources are started and owned by NewService.
+	httpVhostServer   *http.Server
+	httpVhostListener net.Listener
 
 	sshTunnelGateway *ssh.Gateway
 
@@ -132,7 +137,10 @@ type Service struct {
 	// service context
 	ctx context.Context
 	// call cancel to stop service
-	cancel context.CancelFunc
+	cancel      context.CancelFunc
+	lifecycleMu sync.Mutex
+	closed      bool
+	closeOnce   sync.Once
 }
 
 func NewService(cfg *v1.ServerConfig) (*Service, error) {
@@ -324,6 +332,8 @@ func NewService(cfg *v1.ServerConfig) (*Service, error) {
 				return nil, fmt.Errorf("create vhost http listener error, %v", err)
 			}
 		}
+		svr.httpVhostServer = server
+		svr.httpVhostListener = l
 		go func() {
 			_ = server.Serve(l)
 		}()
@@ -370,8 +380,22 @@ func NewService(cfg *v1.ServerConfig) (*Service, error) {
 
 func (svr *Service) Run(ctx context.Context) {
 	ctx, cancel := context.WithCancel(ctx)
+	svr.lifecycleMu.Lock()
+	if svr.closed {
+		svr.lifecycleMu.Unlock()
+		cancel()
+		return
+	}
 	svr.ctx = ctx
 	svr.cancel = cancel
+	svr.lifecycleMu.Unlock()
+	defer svr.Close()
+	if ctx.Err() != nil {
+		return
+	}
+	// Cancellation must unblock the synchronous main listener's Accept.
+	stopClose := context.AfterFunc(ctx, func() { _ = svr.Close() })
+	defer stopClose()
 
 	// run dashboard web server.
 	if svr.webServer != nil {
@@ -405,13 +429,21 @@ func (svr *Service) Run(ctx context.Context) {
 	svr.HandleListener(svr.listener, false)
 
 	<-svr.ctx.Done()
-	// service context may not be canceled by svr.Close(), we should call it here to release resources
-	if svr.listener != nil {
-		svr.Close()
-	}
 }
 
 func (svr *Service) Close() error {
+	svr.lifecycleMu.Lock()
+	svr.closed = true
+	cancel := svr.cancel
+	svr.lifecycleMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	svr.closeOnce.Do(svr.closeResources)
+	return nil
+}
+
+func (svr *Service) closeResources() {
 	if svr.kcpListener != nil {
 		svr.kcpListener.Close()
 	}
@@ -433,16 +465,17 @@ func (svr *Service) Close() error {
 	if svr.webServer != nil {
 		svr.webServer.Close()
 	}
+	if svr.httpVhostServer != nil {
+		svr.httpVhostServer.Close()
+		// Close even if Serve has not registered its listener yet.
+		svr.httpVhostListener.Close()
+	}
 	if svr.sshTunnelGateway != nil {
 		svr.sshTunnelGateway.Close()
 	}
 	svr.rc.Close()
 	svr.muxer.Close()
 	svr.ctlManager.Close()
-	if svr.cancel != nil {
-		svr.cancel()
-	}
-	return nil
 }
 
 func (svr *Service) handleConnection(ctx context.Context, conn net.Conn, internal bool) {
@@ -796,6 +829,9 @@ func (svr *Service) RegisterControl(
 		if err != nil {
 			return nil, err
 		}
+	}
+	if err := validation.ValidateRunID(loginMsg.RunID); err != nil {
+		return nil, fmt.Errorf("invalid run id: %w", err)
 	}
 
 	ctx := netpkg.NewContextFromConn(ctlConn)
