@@ -262,10 +262,10 @@ func startServiceWithAggregator(
 		return err
 	}
 
-	shouldGracefulClose := cfg.Transport.Protocol == "kcp" || cfg.Transport.Protocol == "quic"
-	if shouldGracefulClose {
-		go handleTermSignal(svr)
-	}
+	// Always handle termination signals: once any service in this process calls
+	// signal.Notify, Go no longer exits on SIGINT by default, so services started
+	// in parallel (e.g. tcp alongside kcp) must each stop on their own.
+	go handleTermSignal(svr)
 	return svr.Run(context.Background())
 }
 
