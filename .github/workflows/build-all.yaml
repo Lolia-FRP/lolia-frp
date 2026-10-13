@@ -31,6 +31,9 @@ jobs:
             goarch: arm
           - goos: openbsd
             goarch: arm
+          # Go 1.26 移除了 windows/arm (32位) 支持
+          - goos: windows
+            goarch: arm
           - goos: android
             goarch: amd64
           - goos: android
@@ -48,7 +51,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          go-version: '1.26'
 
       - name: Install dependencies
         run: |
@@ -114,7 +117,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          go-version: '1.26'
 
       - name: Install dependencies and Android NDK
         run: |
