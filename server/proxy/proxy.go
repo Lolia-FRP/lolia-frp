@@ -351,6 +351,10 @@ func (pxy *BaseProxy) handleUserTCPConnection(userConn net.Conn) {
 	xl.Debugf("join connections closed")
 }
 
+// Keep upstream's signature to ease merges; this fork counts traffic via
+// wrappers and ignores the returned byte totals.
+//
+//nolint:unparam
 func (pxy *BaseProxy) joinUserConnection(local io.ReadWriteCloser, userConn net.Conn, proxyType string, xl *xlog.Logger) (int64, int64, []error) {
 	visitorWireProtocol := wireProtocolFromConn(userConn)
 	visitorUDPPacketCodec := udpPacketCodecFromConn(userConn)
