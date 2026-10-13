@@ -14,7 +14,7 @@
 
 package version
 
-var version = "LoliaFRP-CLI 0.71.1"
+var version = "LoliaFRP-CLI 0.71.2"
 
 func Full() string {
 	return version
