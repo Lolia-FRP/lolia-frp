@@ -40,7 +40,7 @@ func init() {
 	Logger = log.NewWithOptions(os.Stderr, log.Options{
 		ReportCaller:    true,
 		ReportTimestamp: true,
-		TimeFormat:      time.Kitchen,
+		TimeFormat:      time.RFC3339,
 		Prefix:          "LoliaFRP-CLI",
 		CallerOffset:    1,
 	})
@@ -77,7 +77,7 @@ func InitLogger(logPath string, levelStr string, maxDays int, disableLogColor bo
 	Logger = log.NewWithOptions(output, log.Options{
 		ReportCaller:    true,
 		ReportTimestamp: true,
-		TimeFormat:      time.Kitchen,
+		TimeFormat:      time.RFC3339,
 		Prefix:          "LoliaFRP-CLI",
 		CallerOffset:    1,
 		Level:           level,
