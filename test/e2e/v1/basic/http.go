@@ -2,13 +2,12 @@ package basic
 
 import (
 	"fmt"
+	"io"
 	"net/http"
-	"net/url"
-	"strconv"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"github.com/onsi/ginkgo/v2"
+	"golang.org/x/net/websocket"
 
 	"github.com/fatedier/frp/test/e2e/framework"
 	"github.com/fatedier/frp/test/e2e/framework/consts"
@@ -444,27 +443,11 @@ var _ = ginkgo.Describe("[Feature: HTTP]", func() {
 		vhostHTTPPort := f.AllocPort()
 		serverConf := getDefaultServerConf(vhostHTTPPort)
 
-		upgrader := websocket.Upgrader{}
-
 		localPort := f.AllocPort()
 		localServer := httpserver.New(
 			httpserver.WithBindPort(localPort),
-			httpserver.WithHandler(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-				c, err := upgrader.Upgrade(w, req, nil)
-				if err != nil {
-					return
-				}
-				defer c.Close()
-				for {
-					mt, message, err := c.ReadMessage()
-					if err != nil {
-						break
-					}
-					err = c.WriteMessage(mt, message)
-					if err != nil {
-						break
-					}
-				}
+			httpserver.WithHandler(websocket.Handler(func(c *websocket.Conn) {
+				_, _ = io.Copy(c, c)
 			})),
 		)
 
@@ -481,16 +464,17 @@ var _ = ginkgo.Describe("[Feature: HTTP]", func() {
 
 		f.RunProcesses(serverConf, []string{clientConf})
 
-		u := url.URL{Scheme: "ws", Host: "127.0.0.1:" + strconv.Itoa(vhostHTTPPort)}
-		c, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
+		c, err := websocket.Dial(fmt.Sprintf("ws://127.0.0.1:%d/", vhostHTTPPort), "", "http://127.0.0.1/")
+		framework.ExpectNoError(err)
+		defer c.Close()
+
+		_, err = c.Write([]byte(consts.TestString))
 		framework.ExpectNoError(err)
 
-		err = c.WriteMessage(websocket.TextMessage, []byte(consts.TestString))
+		buf := make([]byte, 1024)
+		n, err := c.Read(buf)
 		framework.ExpectNoError(err)
-
-		_, msg, err := c.ReadMessage()
-		framework.ExpectNoError(err)
-		framework.ExpectEqualValues(consts.TestString, string(msg))
+		framework.ExpectEqualValues(consts.TestString, string(buf[:n]))
 	})
 
 	ginkgo.It("vhostHTTPTimeout", func() {

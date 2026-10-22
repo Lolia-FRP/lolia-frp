@@ -1,6 +1,6 @@
 module github.com/fatedier/frp
 
-go 1.26.0
+go 1.26.10
 
 require (
 	github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5
@@ -11,7 +11,6 @@ require (
 	github.com/fatedier/yamux v0.2.0
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/mux v1.8.1
-	github.com/gorilla/websocket v1.5.0
 	github.com/onsi/ginkgo/v2 v2.23.4
 	github.com/onsi/gomega v1.36.3
 	github.com/pelletier/go-toml/v2 v2.2.0
